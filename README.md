@@ -1,4 +1,4 @@
-# Ktor on OKE with Terraform and GitHub Actions
+# Ktor on OKE with Terraform and GitHub Actions.
 
 This repository contains a simple **Ktor** application, along with the necessary **Terraform** configuration and **GitHub Actions** workflow to deploy it to **Oracle Kubernetes Engine (OKE)** using only free-tier eligible resources.
 
