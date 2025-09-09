@@ -1,9 +1,8 @@
-name: Build and Deploy to OKE
+name: Build, Push to OCIR, and Deploy to OKE
 
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]
 
 jobs:
   build-and-deploy:
@@ -12,17 +11,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v3
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: Build with Gradle
-        run: ./gradlew shadowJar
-
-      - name: Set up OCI CLI
-        uses: oracle-actions/setup-oci-cli@v1.1
+      - name: Setup OCI CLI
+        # Using a specific, stable version of the action to resolve the error
+        uses: oracle-actions/setup-oci-cli@v1.2
         with:
           tenancy: ${{ secrets.OCI_TENANCY_OCID }}
           user: ${{ secrets.OCI_USER_OCID }}
@@ -30,40 +21,35 @@ jobs:
           key: ${{ secrets.OCI_PRIVATE_KEY }}
           region: ${{ secrets.OCI_REGION }}
 
-      - name: Log in to OCIR
-        run: oci ce cluster create-kubeconfig --cluster-id ${{ steps.terraform_apply.outputs.cluster_id }} --file $HOME/.kube/config --region ${{ secrets.OCI_REGION }} --token-version 2.0.0
-
-      - name: Build and push Docker image
-        run: |
-          docker build -t ktor-app .
-          docker tag ktor-app:latest ${{ secrets.OCI_REGION }}.ocir.io/${{ secrets.OCI_TENANCY_NAMESPACE }}/ktor-app:latest
-          docker push ${{ secrets.OCI_REGION }}.ocir.io/${{ secrets.OCI_TENANCY_NAMESPACE }}/ktor-app:latest
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
+      - name: Login to OCIR
+        uses: oracle-actions/login-ocir@v1
         with:
-          terraform_version: 1.5.0
+          auth_token: ${{ secrets.OCI_AUTH_TOKEN }}
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Build, tag, and push image to OCIR
+        id: build-image
+        run: |
+          # Use your tenancy's namespace for the repository path
+          # You can find this under OCIR -> Settings
+          NAMESPACE=$(oci os ns get --raw-output | jq -r .data)
+          IMAGE_NAME="ktor-oke-app"
+          IMAGE_TAG="latest"
+          OCIR_URL="${{ secrets.OCI_REGION }}.ocir.io/${NAMESPACE}/${IMAGE_NAME}:${IMAGE_TAG}"
+          docker build -t $OCIR_URL .
+          docker push $OCIR_URL
+          echo "image_url=$OCIR_URL" >> $GITHUB_OUTPUT
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v2
 
       - name: Terraform Init
         run: terraform init
-        env:
-          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
-          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
-          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
-          TF_VAR_private_key: ${{ secrets.OCI_PRIVATE_KEY }}
-          TF_VAR_region: ${{ secrets.OCI_REGION }}
-          TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
-          TF_VAR_tenancy_namespace: ${{ secrets.OCI_TENANCY_NAMESPACE }}
-
 
       - name: Terraform Apply
-        id: terraform_apply
-        run: terraform apply -auto-approve
-        env:
-          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
-          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
-          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
-          TF_VAR_private_key: ${{ secrets.OCI_PRIVATE_KEY }}
-          TF_VAR_region: ${{ secrets.OCI_REGION }}
-          TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
-          TF_VAR_tenancy_namespace: ${{ secrets.OCI_TENANCY_NAMESPACE }}
+        id: terraform
+        run: terraform apply -auto-approve -var="docker_image=${{ steps.build-image.outputs.image_url }}" -var="node_image_ocid=${{ secrets.OCI_NODE_IMAGE_OCID }}"
+
+
