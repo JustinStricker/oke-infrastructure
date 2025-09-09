@@ -31,19 +31,19 @@ provider "oci" {
 }
 
 # Data source to fetch the kubeconfig for the OKE cluster.
-# This is the modern way to configure the Kubernetes providers.
-data "oci_containerengine_cluster_kubeconfig" "oke_kubeconfig" {
+# This corrects the typo from kubeconfig to kube_config.
+data "oci_containerengine_cluster_kube_config" "oke_kubeconfig" {
   cluster_id = oci_containerengine_cluster.oke_cluster.id
 }
 
 # Configure the Kubernetes provider using the fetched kubeconfig.
 provider "kubernetes" {
-  config_path = data.oci_containerengine_cluster_kubeconfig.oke_kubeconfig.path
+  config_path = data.oci_containerengine_cluster_kube_config.oke_kubeconfig.path
 }
 
 # Configure the kubectl provider using the fetched kubeconfig.
 provider "kubectl" {
-  config_path = data.oci_containerengine_cluster_kubeconfig.oke_kubeconfig.path
+  config_path = data.oci_containerengine_cluster_kube_config.oke_kubeconfig.path
 }
 
 # --- Networking Resources ---
@@ -210,3 +210,4 @@ data "kubectl_get_service" "ktor_service" {
     kubernetes_service.ktor_app_service
   ]
 }
+
