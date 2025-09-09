@@ -53,7 +53,7 @@ jobs:
         uses: gradle/gradle-build-action@v2
         with:
           arguments: shadowJar
-          gradle-version: current
+          gradle-version: '8.5'
 
       # Step 5: Build, tag, and push the Docker image
       # This step builds the application, tags it with the correct OCIR path
@@ -92,3 +92,4 @@ jobs:
             -var="docker_image=${{ steps.build-image.outputs.image_url }}" \
             -var="node_image_ocid=${{ secrets.OCI_NODE_IMAGE_OCID }}" \
             -var="compartment_ocid=${{ secrets.OCI_COMPARTMENT_OCID }}"
+
