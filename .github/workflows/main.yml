@@ -30,6 +30,8 @@ jobs:
         id: login-ocir
         with:
           auth_token: ${{ secrets.OCI_AUTH_TOKEN }}
+        env:
+          OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
 
       - name: Build with Gradle
         uses: gradle/gradle-build-action@v2
