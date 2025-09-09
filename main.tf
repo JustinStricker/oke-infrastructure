@@ -28,7 +28,7 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
   # This shape has limited resources (1 OCPU, 1GB RAM) which may not be sufficient for some workloads.
   node_shape         = "VM.Standard.E2.1.Micro"
   node_source_details {
-    image_id    = "ocid1.image.oc1.phx.aaaaaaaa..." # Replace with a valid OCID for your region
+    image_id    = "ocid1.image.oc1.iad.amaaaaaangih7eyahd2fkief2vhj34ywop6zxc4bfxsw4mqaqkfsmwkvxcaq" 
     source_type = "image"
   }
   quantity_per_subnet = 1
