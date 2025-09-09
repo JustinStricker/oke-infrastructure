@@ -46,20 +46,13 @@ jobs:
         with:
           auth_token: ${{ secrets.OCI_AUTH_TOKEN }}
 
-      # Step 4: Set up JDK and Build with Gradle
-      # This step builds the application and creates the executable JAR file
-      # that will be copied into the Docker image.
-      - name: Set up JDK 17
-        uses: actions/setup-java@v3
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-      
-      - name: Make gradlew executable
-        run: chmod +x ./gradlew
-        
+      # Step 4: Build with Gradle
+      # This action sets up Java and Gradle, then builds the application
+      # to create the executable JAR file.
       - name: Build with Gradle
-        run: ./gradlew shadowJar
+        uses: gradle/gradle-build-action@v2
+        with:
+          arguments: shadowJar
 
       # Step 5: Build, tag, and push the Docker image
       # This step builds the application, tags it with the correct OCIR path
@@ -98,4 +91,3 @@ jobs:
             -var="docker_image=${{ steps.build-image.outputs.image_url }}" \
             -var="node_image_ocid=${{ secrets.OCI_NODE_IMAGE_OCID }}" \
             -var="compartment_ocid=${{ secrets.OCI_COMPARTMENT_OCID }}"
-
