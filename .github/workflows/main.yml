@@ -98,4 +98,3 @@ jobs:
             -var="docker_image=${{ steps.build-image.outputs.image_url }}" \
             -var="node_image_ocid=${{ secrets.OCI_NODE_IMAGE_OCID }}" \
             -var="compartment_ocid=${{ secrets.OCI_COMPARTMENT_OCID }}"
-
