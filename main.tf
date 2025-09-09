@@ -2,15 +2,20 @@
 # It specifies the source and version for each provider.
 terraform {
   required_providers {
-    # The official OCI provider has moved from hashicorp/oci to oracle/oci.
+    # The official OCI provider from Oracle.
     oci = {
       source  = "oracle/oci"
       version = "5.19.0"
     }
-    # The kubectl provider is now maintained by gavinbunney.
+    # The community-supported kubectl provider.
     kubectl = {
       source  = "gavinbunney/kubectl"
       version = "1.14.0"
+    }
+    # The official Kubernetes provider.
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "2.23.0"
     }
   }
 }
@@ -25,28 +30,20 @@ provider "oci" {
   region           = var.region
 }
 
-# Configure the Kubernetes provider. This will be used to deploy
-# the application to the OKE cluster.
-provider "kubernetes" {
-  host                   = oci_containerengine_cluster.oke_cluster.endpoints[0].public_endpoint
-  cluster_ca_certificate = base64decode(oci_containerengine_cluster.oke_cluster.endpoints[0].cluster_ca_certificate)
-  exec {
-    api_version = "client.authentication.k8s.io/v1beta1"
-    command     = "oci"
-    args        = ["ce", "cluster", "generate-token", "--cluster-id", oci_containerengine_cluster.oke_cluster.id, "--region", var.region]
-  }
+# Data source to fetch the kubeconfig for the OKE cluster.
+# This is the modern way to configure the Kubernetes providers.
+data "oci_containerengine_cluster_kubeconfig" "oke_kubeconfig" {
+  cluster_id = oci_containerengine_cluster.oke_cluster.id
 }
 
-# Configure the kubectl provider, which allows running kubectl commands.
+# Configure the Kubernetes provider using the fetched kubeconfig.
+provider "kubernetes" {
+  config_path = data.oci_containerengine_cluster_kubeconfig.oke_kubeconfig.path
+}
+
+# Configure the kubectl provider using the fetched kubeconfig.
 provider "kubectl" {
-  host                   = oci_containerengine_cluster.oke_cluster.endpoints[0].public_endpoint
-  cluster_ca_certificate = base64decode(oci_containerengine_cluster.oke_cluster.endpoints[0].cluster_ca_certificate)
-  load_config_file       = false
-  exec {
-    api_version = "client.authentication.k8s.io/v1beta1"
-    command     = "oci"
-    args        = ["ce", "cluster", "generate-token", "--cluster-id", oci_containerengine_cluster.oke_cluster.id, "--region", var.region]
-  }
+  config_path = data.oci_containerengine_cluster_kubeconfig.oke_kubeconfig.path
 }
 
 # --- Networking Resources ---
@@ -82,20 +79,24 @@ resource "oci_core_default_route_table" "oke_route_table" {
 
 # Creates a subnet for the OKE worker nodes.
 resource "oci_core_subnet" "oke_nodes_subnet" {
-  compartment_id = var.compartment_ocid
-  vcn_id         = oci_core_vcn.oke_vcn.id
-  display_name   = "oke_nodes_subnet"
-  cidr_block     = "10.0.1.0/24"
-  route_table_id = oci_core_vcn.oke_vcn.default_route_table_id
+  compartment_id     = var.compartment_ocid
+  vcn_id             = oci_core_vcn.oke_vcn.id
+  display_name       = "oke_nodes_subnet"
+  cidr_block         = "10.0.1.0/24"
+  route_table_id     = oci_core_vcn.oke_vcn.default_route_table_id
+  security_list_ids  = [oci_core_vcn.oke_vcn.default_security_list_id]
+  dhcp_options_id    = oci_core_vcn.oke_vcn.default_dhcp_options_id
 }
 
 # Creates a subnet for the Kubernetes load balancers.
 resource "oci_core_subnet" "oke_lb_subnet" {
-  compartment_id = var.compartment_ocid
-  vcn_id         = oci_core_vcn.oke_vcn.id
-  display_name   = "oke_lb_subnet"
-  cidr_block     = "10.0.2.0/24"
-  route_table_id = oci_core_vcn.oke_vcn.default_route_table_id
+  compartment_id     = var.compartment_ocid
+  vcn_id             = oci_core_vcn.oke_vcn.id
+  display_name       = "oke_lb_subnet"
+  cidr_block         = "10.0.2.0/24"
+  route_table_id     = oci_core_vcn.oke_vcn.default_route_table_id
+  security_list_ids  = [oci_core_vcn.oke_vcn.default_security_list_id]
+  dhcp_options_id    = oci_core_vcn.oke_vcn.default_dhcp_options_id
 }
 
 # --- OKE Cluster Resources ---
@@ -109,12 +110,12 @@ resource "oci_containerengine_cluster" "oke_cluster" {
   options {
     add_ons {
       is_kubernetes_dashboard_enabled = false
-      is_tiller_enabled               = false
     }
     kubernetes_network_config {
       pods_cidr     = "10.244.0.0/16"
       services_cidr = "10.96.0.0/16"
     }
+    service_lb_subnet_ids = [oci_core_subnet.oke_lb_subnet.id]
   }
 }
 
@@ -198,4 +199,14 @@ resource "kubernetes_service" "ktor_app_service" {
     }
     type = "LoadBalancer"
   }
+}
+
+# Data source to get the status of the Kubernetes service after it's deployed.
+# This is needed to retrieve the load balancer's public IP address.
+data "kubectl_get_service" "ktor_service" {
+  name      = kubernetes_service.ktor_app_service.metadata[0].name
+  namespace = kubernetes_namespace.app_ns.metadata[0].name
+  depends_on = [
+    kubernetes_service.ktor_app_service
+  ]
 }
