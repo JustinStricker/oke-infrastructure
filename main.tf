@@ -1,3 +1,22 @@
+# This block configures the required providers for this Terraform project.
+# It specifies the source and version for each provider.
+terraform {
+  required_providers {
+    # The official OCI provider has moved from hashicorp/oci to oracle/oci.
+    oci = {
+      source  = "oracle/oci"
+      version = "5.19.0"
+    }
+    # The kubectl provider is now maintained by gavinbunney.
+    kubectl = {
+      source  = "gavinbunney/kubectl"
+      version = "1.14.0"
+    }
+  }
+}
+
+# Configure the Oracle Cloud Infrastructure (OCI) provider with credentials.
+# These values are passed in as variables from the GitHub Actions workflow.
 provider "oci" {
   tenancy_ocid     = var.tenancy_ocid
   user_ocid        = var.user_ocid
@@ -6,96 +25,177 @@ provider "oci" {
   region           = var.region
 }
 
-resource "oci_containerengine_cluster" "oke_cluster" {
-  compartment_id      = var.compartment_ocid
-  name                = "ktor-cluster"
-  kubernetes_version  = "v1.28.2"
-  vcn_id              = oci_core_vcn.oke_vcn.id
-  options {
-    add_ons {
-      is_kubernetes_dashboard_enabled = false
-      is_tiller_enabled               = false
-    }
+# Configure the Kubernetes provider. This will be used to deploy
+# the application to the OKE cluster.
+provider "kubernetes" {
+  host                   = oci_containerengine_cluster.oke_cluster.endpoints[0].public_endpoint
+  cluster_ca_certificate = base64decode(oci_containerengine_cluster.oke_cluster.endpoints[0].cluster_ca_certificate)
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "oci"
+    args        = ["ce", "cluster", "generate-token", "--cluster-id", oci_containerengine_cluster.oke_cluster.id, "--region", var.region]
   }
 }
 
-resource "oci_containerengine_node_pool" "oke_node_pool" {
-  cluster_id         = oci_containerengine_cluster.oke_cluster.id
-  compartment_id     = var.compartment_ocid
-  name               = "free-tier-amd-pool"
-  kubernetes_version = oci_containerengine_cluster.oke_cluster.kubernetes_version
-  # NOTE: Using the Always Free AMD shape (VM.Standard.E2.1.Micro).
-  # This shape has limited resources (1 OCPU, 1GB RAM) which may not be sufficient for some workloads.
-  node_shape         = "VM.Standard.E2.1.Micro"
-  node_source_details {
-    image_id    = "ocid1.image.oc1.iad.amaaaaaangih7eyahd2fkief2vhj34ywop6zxc4bfxsw4mqaqkfsmwkvxcaq" 
-    source_type = "image"
+# Configure the kubectl provider, which allows running kubectl commands.
+provider "kubectl" {
+  host                   = oci_containerengine_cluster.oke_cluster.endpoints[0].public_endpoint
+  cluster_ca_certificate = base64decode(oci_containerengine_cluster.oke_cluster.endpoints[0].cluster_ca_certificate)
+  load_config_file       = false
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "oci"
+    args        = ["ce", "cluster", "generate-token", "--cluster-id", oci_containerengine_cluster.oke_cluster.id, "--region", var.region]
   }
-  quantity_per_subnet = 1
-  subnet_ids          = [oci_core_subnet.oke_subnet.id]
 }
 
+# --- Networking Resources ---
 
+# Fetches the list of availability domains in the region.
+data "oci_identity_availability_domains" "ads" {
+  compartment_id = var.tenancy_ocid
+}
+
+# Creates a Virtual Cloud Network (VCN) for the cluster.
 resource "oci_core_vcn" "oke_vcn" {
   compartment_id = var.compartment_ocid
   display_name   = "oke_vcn"
   cidr_block     = "10.0.0.0/16"
 }
 
-resource "oci_core_subnet" "oke_subnet" {
+# Creates an Internet Gateway to allow traffic to and from the internet.
+resource "oci_core_internet_gateway" "oke_ig" {
   compartment_id = var.compartment_ocid
   vcn_id         = oci_core_vcn.oke_vcn.id
-  display_name   = "oke_subnet"
-  cidr_block     = "10.0.1.0/24"
+  display_name   = "oke_ig"
 }
 
-resource "oci_artifacts_container_repository" "ktor_repo" {
-  compartment_id = var.compartment_ocid
-  display_name = "ktor-app"
-  is_public = true
-}
-
-resource "null_resource" "kubectl_apply" {
-  depends_on = [oci_containerengine_node_pool.oke_node_pool]
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      oci ce cluster create-kubeconfig --cluster-id ${oci_containerengine_cluster.oke_cluster.id} --file $HOME/.kube/config --region ${var.region} --token-version 2.0.0
-      kubectl apply -f - <<EOF
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: ktor-app-deployment
-      spec:
-        replicas: 1
-        selector:
-          matchLabels:
-            app: ktor-app
-        template:
-          metadata:
-            labels:
-              app: ktor-app
-          spec:
-            containers:
-            - name: ktor-app
-              image: "${var.region}.ocir.io/${var.tenancy_namespace}/${oci_artifacts_container_repository.ktor_repo.display_name}:latest"
-              ports:
-              - containerPort: 8080
-      ---
-      apiVersion: v1
-      kind: Service
-      metadata:
-        name: ktor-app-service
-      spec:
-        type: LoadBalancer
-        ports:
-        - port: 80
-          targetPort: 8080
-        selector:
-          app: ktor-app
-      EOF
-    EOT
+# Creates a default route table for the VCN.
+resource "oci_core_default_route_table" "oke_route_table" {
+  manage_default_resource_id = oci_core_vcn.oke_vcn.default_route_table_id
+  display_name               = "oke_route_table"
+  route_rules {
+    destination       = "0.0.0.0/0"
+    network_entity_id = oci_core_internet_gateway.oke_ig.id
   }
 }
 
+# Creates a subnet for the OKE worker nodes.
+resource "oci_core_subnet" "oke_nodes_subnet" {
+  compartment_id = var.compartment_ocid
+  vcn_id         = oci_core_vcn.oke_vcn.id
+  display_name   = "oke_nodes_subnet"
+  cidr_block     = "10.0.1.0/24"
+  route_table_id = oci_core_vcn.oke_vcn.default_route_table_id
+}
 
+# Creates a subnet for the Kubernetes load balancers.
+resource "oci_core_subnet" "oke_lb_subnet" {
+  compartment_id = var.compartment_ocid
+  vcn_id         = oci_core_vcn.oke_vcn.id
+  display_name   = "oke_lb_subnet"
+  cidr_block     = "10.0.2.0/24"
+  route_table_id = oci_core_vcn.oke_vcn.default_route_table_id
+}
+
+# --- OKE Cluster Resources ---
+
+# Creates the Oracle Kubernetes Engine (OKE) cluster.
+resource "oci_containerengine_cluster" "oke_cluster" {
+  compartment_id     = var.compartment_ocid
+  kubernetes_version = "v1.28.2" # Use a specific, recent version
+  name               = "ktor_oke_cluster"
+  vcn_id             = oci_core_vcn.oke_vcn.id
+  options {
+    add_ons {
+      is_kubernetes_dashboard_enabled = false
+      is_tiller_enabled               = false
+    }
+    kubernetes_network_config {
+      pods_cidr     = "10.244.0.0/16"
+      services_cidr = "10.96.0.0/16"
+    }
+  }
+}
+
+# Creates the node pool for the OKE cluster. These are the worker machines.
+resource "oci_containerengine_node_pool" "oke_node_pool" {
+  cluster_id         = oci_containerengine_cluster.oke_cluster.id
+  compartment_id     = var.compartment_ocid
+  kubernetes_version = oci_containerengine_cluster.oke_cluster.kubernetes_version
+  name               = "amd-pool-free"
+  node_shape         = "VM.Standard.E2.1.Micro" # Always Free AMD shape
+  node_source_details {
+    image_id    = var.node_image_ocid
+    source_type = "image"
+  }
+  node_config_details {
+    placement_configs {
+      availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
+      subnet_id           = oci_core_subnet.oke_nodes_subnet.id
+    }
+    size = 1 # Number of nodes in the pool
+  }
+}
+
+# --- Kubernetes Deployment Resources ---
+
+# Creates a Kubernetes namespace for the application.
+resource "kubernetes_namespace" "app_ns" {
+  metadata {
+    name = "ktor-app"
+  }
+}
+
+# Creates a Kubernetes deployment for the Ktor application.
+resource "kubernetes_deployment" "ktor_app_deployment" {
+  metadata {
+    name      = "ktor-app-deployment"
+    namespace = kubernetes_namespace.app_ns.metadata[0].name
+  }
+  spec {
+    replicas = 1
+    selector {
+      match_labels = {
+        app = "ktor-app"
+      }
+    }
+    template {
+      metadata {
+        labels = {
+          app = "ktor-app"
+        }
+      }
+      spec {
+        container {
+          image = var.docker_image
+          name  = "ktor-app-container"
+          port {
+            container_port = 8080
+          }
+        }
+      }
+    }
+  }
+  # This deployment depends on the node pool being ready.
+  depends_on = [oci_containerengine_node_pool.oke_node_pool]
+}
+
+# Creates a Kubernetes service to expose the application.
+# This will create a public load balancer.
+resource "kubernetes_service" "ktor_app_service" {
+  metadata {
+    name      = "ktor-app-service"
+    namespace = kubernetes_namespace.app_ns.metadata[0].name
+  }
+  spec {
+    selector = {
+      app = kubernetes_deployment.ktor_app_deployment.spec[0].template[0].metadata[0].labels.app
+    }
+    port {
+      port        = 80
+      target_port = 8080
+    }
+    type = "LoadBalancer"
+  }
+}
