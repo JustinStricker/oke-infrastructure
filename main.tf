@@ -223,3 +223,4 @@ data "kubernetes_service" "ktor_service" {
     kubernetes_service.ktor_app_service
   ]
 }
+ 
