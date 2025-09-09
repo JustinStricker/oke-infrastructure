@@ -14,3 +14,4 @@ EXPOSE 8080
 # Run the jar file using its new, consistent name
 CMD ["java", "-jar", "app.jar"]
 
+ 
