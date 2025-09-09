@@ -115,7 +115,7 @@ resource "oci_core_subnet" "oke_lb_subnet" {
 # Creates the Oracle Kubernetes Engine (OKE) cluster.
 resource "oci_containerengine_cluster" "oke_cluster" {
   compartment_id     = var.compartment_ocid
-  kubernetes_version = "v1.28.2" # Use a specific, recent version
+  kubernetes_version = "v1.31.1" # Updated to a supported version
   name               = "ktor_oke_cluster"
   vcn_id             = oci_core_vcn.oke_vcn.id
   options {
