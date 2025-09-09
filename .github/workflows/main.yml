@@ -1,81 +1,95 @@
+# This workflow builds a Ktor application, containerizes it, pushes the
+# resulting image to Oracle Cloud Infrastructure Registry (OCIR), and then
+# uses Terraform to deploy the application to Oracle Kubernetes Engine (OKE).
+
 name: Build and Deploy to OKE
 
+# This workflow triggers on any push to the 'main' branch.
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    # Define OCI credentials as environment variables for the job
+    # These will be used by the oracle-actions. We are mapping your
+    # original secret names to the variables the actions expect.
+    env:
+      OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
+      OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
+      OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+      OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}
+      OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
     steps:
-      - name: Checkout code
+      # Step 1: Check out the repository code
+      - name: Checkout Repository
         uses: actions/checkout@v3
 
+      # Step 2: Get or create the OCIR repository
+      # This action ensures the target repository exists before we try to push.
+      # It also provides the full repository path as an output.
       - name: Get or create an OCIR Repository
-        id: get-ocir-repository
         uses: oracle-actions/get-ocir-repository@v1.3.0
+        id: get-ocir-repository
         with:
+          # Define the name for your container repository
           name: ktor-oke-app
+          # Specify the compartment where the repository should be
           compartment: ${{ secrets.OCI_COMPARTMENT_OCID }}
-        env:
-          OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
-          OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-          OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}
-          OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
-          
-      - name: Login to OCIR
+
+      # Step 3: Log in to the Oracle Cloud Infrastructure Registry (OCIR)
+      # This authenticates the Docker client to push images to your registry.
+      - name: Log into OCIR
         uses: oracle-actions/login-ocir@v1.3.0
         id: login-ocir
         with:
           auth_token: ${{ secrets.OCI_AUTH_TOKEN }}
-        env:
-          OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
 
+      # Step 4: Build with Gradle
+      # This action sets up Java and Gradle, then builds the application
+      # to create the executable JAR file.
       - name: Build with Gradle
         uses: gradle/gradle-build-action@v2
         with:
-          gradle-version: '8.5' # Pinned to a compatible version
           arguments: shadowJar
+          gradle-version: '8.5'
 
-      - name: Build and push Docker image
+      # Step 5: Build, tag, and push the Docker image
+      # This step builds the application, tags it with the correct OCIR path
+      # from the previous step, and pushes it to the registry.
+      - name: Build and Push Docker Image
         id: build-image
         run: |
           IMAGE_TAG=$GITHUB_SHA
           # The full image path is an output from the 'get-ocir-repository' step
           IMAGE_URL="${{ steps.get-ocir-repository.outputs.repo_path }}:$IMAGE_TAG"
-          
+
           # Build, tag, and push the image
           docker build -t $IMAGE_URL .
           docker push $IMAGE_URL
           
           # Set the image URL as an output for the Terraform step
           echo "image_url=$IMAGE_URL" >> $GITHUB_OUTPUT
-          
+
+      # Step 6: Set up Terraform
+      # This action installs the Terraform CLI in the workflow runner.
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
-        with:
-          terraform_version: 1.5.0
 
+      # Step 7: Initialize Terraform
+      # This downloads the necessary providers for your configuration.
       - name: Terraform Init
-        id: terraform_init
         run: terraform init
-        env:
-          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
-          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
-          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
-          TF_VAR_private_key: ${{ secrets.OCI_PRIVATE_KEY }}
-          TF_VAR_region: ${{ secrets.OCI_REGION }}
 
+      # Step 8: Apply Terraform Configuration
+      # This step creates or updates the infrastructure in OCI.
+      # It passes the Docker image URL, node image OCID, and compartment OCID
+      # as variables to the Terraform configuration.
       - name: Terraform Apply
-        id: terraform_apply
-        run: terraform apply -auto-approve -var="docker_image=${{ steps.build-image.outputs.image_url }}"
-        env:
-          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
-          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
-          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
-          TF_VAR_private_key: ${{ secrets.OCI_PRIVATE_KEY }}
-          TF_VAR_region: ${{ secrets.OCI_REGION }}
-          TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
-          TF_VAR_node_image_ocid: ${{ secrets.OCI_NODE_IMAGE_OCID }}
+        run: |
+          terraform apply -auto-approve \
+            -var="docker_image=${{ steps.build-image.outputs.image_url }}" \
+            -var="node_image_ocid=${{ secrets.OCI_NODE_IMAGE_OCID }}" \
+            -var="compartment_ocid=${{ secrets.OCI_COMPARTMENT_OCID }}"
+
