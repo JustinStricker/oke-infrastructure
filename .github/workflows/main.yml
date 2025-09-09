@@ -76,3 +76,6 @@ jobs:
           # The authentication variables are inherited from the job-level env.
           TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
           TF_VAR_node_image_ocid: ${{ secrets.OCI_NODE_IMAGE_OCID }}
+          # The tenancy namespace is an output from the 'get-ocir-repository' step
+          TF_VAR_tenancy_namespace: ${{ steps.get-ocir-repository.outputs.namespace }}
+
