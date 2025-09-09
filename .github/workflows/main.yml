@@ -36,7 +36,7 @@ jobs:
           # Define the name for your container repository
           name: ktor-oke-app
           # Specify the compartment where the repository should be
-          compartment: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          compartment: ${{ secrets.OCI_COMPART... }}
 
       # Step 3: Log in to the Oracle Cloud Infrastructure Registry (OCIR)
       # This authenticates the Docker client to push images to your registry.
@@ -54,6 +54,10 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
+      
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+        
       - name: Build with Gradle
         run: ./gradlew shadowJar
 
