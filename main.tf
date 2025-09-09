@@ -214,9 +214,11 @@ resource "kubernetes_service" "ktor_app_service" {
 
 # Data source to get the status of the Kubernetes service after it's deployed.
 # This is needed to retrieve the load balancer's public IP address.
-data "kubectl_get_service" "ktor_service" {
-  name      = kubernetes_service.ktor_app_service.metadata[0].name
-  namespace = kubernetes_namespace.app_ns.metadata[0].name
+data "kubernetes_service" "ktor_service" {
+  metadata {
+    name      = kubernetes_service.ktor_app_service.metadata[0].name
+    namespace = kubernetes_namespace.app_ns.metadata[0].name
+  }
   depends_on = [
     kubernetes_service.ktor_app_service
   ]
