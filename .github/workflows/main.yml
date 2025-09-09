@@ -46,7 +46,18 @@ jobs:
         with:
           auth_token: ${{ secrets.OCI_AUTH_TOKEN }}
 
-      # Step 4: Build, tag, and push the Docker image
+      # Step 4: Set up JDK and Build with Gradle
+      # This step builds the application and creates the executable JAR file
+      # that will be copied into the Docker image.
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - name: Build with Gradle
+        run: ./gradlew shadowJar
+
+      # Step 5: Build, tag, and push the Docker image
       # This step builds the application, tags it with the correct OCIR path
       # from the previous step, and pushes it to the registry.
       - name: Build and Push Docker Image
@@ -63,17 +74,17 @@ jobs:
           # Set the image URL as an output for the Terraform step
           echo "image_url=$IMAGE_URL" >> $GITHUB_OUTPUT
 
-      # Step 5: Set up Terraform
+      # Step 6: Set up Terraform
       # This action installs the Terraform CLI in the workflow runner.
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
 
-      # Step 6: Initialize Terraform
+      # Step 7: Initialize Terraform
       # This downloads the necessary providers for your configuration.
       - name: Terraform Init
         run: terraform init
 
-      # Step 7: Apply Terraform Configuration
+      # Step 8: Apply Terraform Configuration
       # This step creates or updates the infrastructure in OCI.
       # It passes the Docker image URL, node image OCID, and compartment OCID
       # as variables to the Terraform configuration.
