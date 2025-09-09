@@ -17,6 +17,11 @@ terraform {
       source  = "hashicorp/kubernetes"
       version = "2.23.0"
     }
+    # Provider to manage local files.
+    local = {
+      source  = "hashicorp/local"
+      version = "2.4.0"
+    }
   }
 }
 
@@ -31,19 +36,25 @@ provider "oci" {
 }
 
 # Data source to fetch the kubeconfig for the OKE cluster.
-# This corrects the typo from kubeconfig to kube_config.
 data "oci_containerengine_cluster_kube_config" "oke_kubeconfig" {
   cluster_id = oci_containerengine_cluster.oke_cluster.id
 }
 
-# Configure the Kubernetes provider using the fetched kubeconfig.
-provider "kubernetes" {
-  config_content = data.oci_containerengine_cluster_kube_config.oke_kubeconfig.content
+# Resource to save the fetched kubeconfig content to a local file.
+# This bridges the gap between the data source (content) and the providers (path).
+resource "local_file" "kubeconfig_file" {
+  content  = data.oci_containerengine_cluster_kube_config.oke_kubeconfig.content
+  filename = "${path.module}/kubeconfig"
 }
 
-# Configure the kubectl provider using the fetched kubeconfig.
+# Configure the Kubernetes provider using the path to the local kubeconfig file.
+provider "kubernetes" {
+  config_path = local_file.kubeconfig_file.filename
+}
+
+# Configure the kubectl provider using the path to the local kubeconfig file.
 provider "kubectl" {
-  config_content = data.oci_containerengine_cluster_kube_config.oke_kubeconfig.content
+  config_path = local_file.kubeconfig_file.filename
 }
 
 # --- Networking Resources ---
@@ -210,4 +221,3 @@ data "kubectl_get_service" "ktor_service" {
     kubernetes_service.ktor_app_service
   ]
 }
-
