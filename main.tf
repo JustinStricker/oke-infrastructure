@@ -38,12 +38,12 @@ data "oci_containerengine_cluster_kube_config" "oke_kubeconfig" {
 
 # Configure the Kubernetes provider using the fetched kubeconfig.
 provider "kubernetes" {
-  config_path = data.oci_containerengine_cluster_kube_config.oke_kubeconfig.path
+  config_content = data.oci_containerengine_cluster_kube_config.oke_kubeconfig.content
 }
 
 # Configure the kubectl provider using the fetched kubeconfig.
 provider "kubectl" {
-  config_path = data.oci_containerengine_cluster_kube_config.oke_kubeconfig.path
+  config_content = data.oci_containerengine_cluster_kube_config.oke_kubeconfig.content
 }
 
 # --- Networking Resources ---
