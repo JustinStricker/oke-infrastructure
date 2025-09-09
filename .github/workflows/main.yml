@@ -12,8 +12,8 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Setup OCI CLI
-        # Updated to a more specific version to resolve the action error
-        uses: oracle-actions/setup-oci-cli@v1.2.1
+        # Corrected action to use a stable version tag
+        uses: oracle-actions/setup-oci-cli@v1
         with:
           tenancy: ${{ secrets.OCI_TENANCY_OCID }}
           user: ${{ secrets.OCI_USER_OCID }}
@@ -22,8 +22,8 @@ jobs:
           region: ${{ secrets.OCI_REGION }}
 
       - name: Login to OCIR
-        # Updated to a more specific version to resolve the action error
-        uses: oracle-actions/login-ocir@v1.0.1
+        # Corrected action to use a stable version tag
+        uses: oracle-actions/login-ocir@v1
         with:
           auth_token: ${{ secrets.OCI_AUTH_TOKEN }}
 
@@ -44,7 +44,8 @@ jobs:
           echo "image_url=$OCIR_URL" >> $GITHUB_OUTPUT
 
       - name: Set up Terraform
-        uses: hashicore/setup-terraform@v2
+        # Corrected typo from 'hashicore' to 'hashicorp'
+        uses: hashicorp/setup-terraform@v2
 
       - name: Terraform Init
         run: terraform init
