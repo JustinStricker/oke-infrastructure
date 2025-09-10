@@ -30,6 +30,7 @@ jobs:
       AWS_REGION: ${{ secrets.OCI_REGION }} # Required for signing requests correctly
       AWS_DEFAULT_REGION: ${{ secrets.OCI_REGION }} # Added for SDK compatibility
       AWS_S3_US_EAST_1_REGIONAL_ENDPOINT: 'regional' # Added for OCI S3 signature compatibility
+      AWS_S3_SIGNATURE_VERSION: 'v4' # Explicitly set signature version for OCI compatibility
 
       # Credentials for the Terraform OCI Provider
       TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
