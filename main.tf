@@ -17,7 +17,7 @@ terraform {
     # Required settings for OCI compatibility
     skip_region_validation      = true
     skip_credentials_validation = true
-    force_path_style            = true
+    use_path_style              = true # Updated from deprecated force_path_style
     skip_requesting_account_id  = true # This prevents the backend from trying to validate credentials against AWS
   }
 
@@ -224,7 +224,7 @@ resource "kubernetes_deployment" "ktor_app_deployment" {
 resource "kubernetes_service" "ktor_app_service" {
   metadata {
     name      = "ktor-app-service"
-    namespace = kubernetes_namespace.app_s.metadata[0].name
+    namespace = kubernetes_namespace.app_ns.metadata[0].name
   }
   spec {
     selector = {
@@ -232,7 +232,7 @@ resource "kubernetes_service" "ktor_app_service" {
     }
     port {
       port        = 80
-      target_port = 8080
+      target_port = "8080"
     }
     type = "LoadBalancer"
   }
@@ -249,4 +249,3 @@ data "kubernetes_service" "ktor_service" {
     kubernetes_service.ktor_app_service
   ]
 }
-
