@@ -1,11 +1,26 @@
 # This block configures the required providers for this Terraform project.
 # It specifies the source and version for each provider.
 terraform {
+  # This backend block configures Terraform to store its state file remotely
+  # in your OCI Object Storage bucket. This provides a persistent "memory"
+  # for your infrastructure, solving the issue of state being lost between runs.
+  backend "s3" {
+    bucket   = "ktor-oke-app-tfstate"
+    key      = "ktor-oke/terraform.tfstate"
+    region   = "us-east-1" # This is a required placeholder for the S3 provider
+    endpoint = "https://idrolupgk4or.compat.objectstorage.us-ashburn-1.oraclecloud.com"
+
+    # Required settings for OCI compatibility
+    skip_region_validation      = true
+    skip_credentials_validation = true
+    force_path_style            = true
+  }
+
   required_providers {
     # The official OCI provider from Oracle.
     oci = {
       source  = "oracle/oci"
-      version = "7.17.0" 
+      version = "7.17.0"
     }
     # The community-supported kubectl provider.
     kubectl = {
@@ -15,12 +30,12 @@ terraform {
     # The official Kubernetes provider.
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = "2.30.0" 
+      version = "2.30.0"
     }
     # Provider to manage local files.
     local = {
       source  = "hashicorp/local"
-      version = "2.5.1" 
+      version = "2.5.1"
     }
   }
 }
@@ -204,7 +219,7 @@ resource "kubernetes_deployment" "ktor_app_deployment" {
 resource "kubernetes_service" "ktor_app_service" {
   metadata {
     name      = "ktor-app-service"
-    namespace = kubernetes_namespace.app_ns.metadata[0].name
+    namespace = kubernetes_namespace.app_s.metadata[0].name
   }
   spec {
     selector = {
