@@ -29,6 +29,7 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.OCI_S3_SECRET_ACCESS_KEY }}
       AWS_REGION: ${{ secrets.OCI_REGION }} # Required for signing requests correctly
       AWS_DEFAULT_REGION: ${{ secrets.OCI_REGION }} # Added for SDK compatibility
+      AWS_S3_US_EAST_1_REGIONAL_ENDPOINT: 'regional' # Added for OCI S3 signature compatibility
 
       # Credentials for the Terraform OCI Provider
       TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
