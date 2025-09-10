@@ -80,4 +80,5 @@ jobs:
           terraform apply -auto-approve \
             -var="docker_image=${{ steps.build-image.outputs.image_url }}" \
             -var="node_image_ocid=${{ secrets.OCI_NODE_IMAGE_OCID }}" \
-            -var="compartment_ocid=${{ secrets.OCI_COMPARTMENT_OCID }}"
+            -var="compartment_ocid=${{ secrets.OCI_COMPARTMENT_OCID }}" \
+            -var="tenancy_namespace=${{ steps.get-ocir-repository.outputs.namespace }}"
