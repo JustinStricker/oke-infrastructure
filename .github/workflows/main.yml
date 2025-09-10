@@ -12,8 +12,9 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    # Define OCI credentials as environment variables for the entire job.
-    # This ensures all steps have access to the necessary secrets.
+    # Define all necessary credentials as environment variables for the entire job.
+    # This ensures that all steps (Oracle actions, Terraform backend, Terraform provider)
+    # have access to the secrets they need.
     env:
       # Credentials for the Oracle Actions (get-ocir-repository, login-ocir)
       OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
@@ -26,6 +27,7 @@ jobs:
       # The S3 backend requires credentials in the AWS format.
       AWS_ACCESS_KEY_ID: ${{ secrets.OCI_USER_OCID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.OCI_AUTH_TOKEN }}
+      AWS_REGION: ${{ secrets.OCI_REGION }} # Required for signing requests correctly
 
       # Credentials for the Terraform OCI Provider
       TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
@@ -55,7 +57,7 @@ jobs:
       - name: Build with Gradle
         uses: gradle/gradle-build-action@v2
         with:
-          gradle-version: '8.5'
+          gradle-version: '8.5' # Pinned to a compatible version
           arguments: shadowJar
 
       - name: Build and Push Docker Image
@@ -79,4 +81,3 @@ jobs:
             -var="docker_image=${{ steps.build-image.outputs.image_url }}" \
             -var="node_image_ocid=${{ secrets.OCI_NODE_IMAGE_OCID }}" \
             -var="compartment_ocid=${{ secrets.OCI_COMPARTMENT_OCID }}"
-
