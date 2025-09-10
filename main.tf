@@ -5,7 +5,7 @@ terraform {
     # The official OCI provider from Oracle.
     oci = {
       source  = "oracle/oci"
-      version = "5.19.0"
+      version = "5.48.0" # Updated to a recent version
     }
     # The community-supported kubectl provider.
     kubectl = {
@@ -15,12 +15,12 @@ terraform {
     # The official Kubernetes provider.
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = "2.23.0"
+      version = "2.30.0" # Updated to a recent version
     }
     # Provider to manage local files.
     local = {
       source  = "hashicorp/local"
-      version = "2.4.0"
+      version = "2.5.1" # Updated to a recent version
     }
   }
 }
@@ -115,7 +115,7 @@ resource "oci_core_subnet" "oke_lb_subnet" {
 # Creates the Oracle Kubernetes Engine (OKE) cluster.
 resource "oci_containerengine_cluster" "oke_cluster" {
   compartment_id     = var.compartment_ocid
-  kubernetes_version = "1.31.10" # Updated to match the image you found
+  kubernetes_version = "v1.33.1" # Reverted to the previous version
   name               = "ktor_oke_cluster"
   vcn_id             = oci_core_vcn.oke_vcn.id
   options {
