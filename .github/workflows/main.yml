@@ -24,9 +24,9 @@ jobs:
       OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
 
       # Credentials for the Terraform S3 Backend (OCI Object Storage)
-      # The S3 backend requires credentials in the AWS format.
-      AWS_ACCESS_KEY_ID: ${{ secrets.OCI_USER_OCID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.OCI_AUTH_TOKEN }}
+      # The S3 backend requires S3-compatible credentials (Customer Secret Keys).
+      AWS_ACCESS_KEY_ID: ${{ secrets.OCI_S3_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.OCI_S3_SECRET_ACCESS_KEY }}
       AWS_REGION: ${{ secrets.OCI_REGION }} # Required for signing requests correctly
 
       # Credentials for the Terraform OCI Provider
