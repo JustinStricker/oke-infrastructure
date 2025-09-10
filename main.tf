@@ -5,7 +5,7 @@ terraform {
     # The official OCI provider from Oracle.
     oci = {
       source  = "oracle/oci"
-      version = "7.17.0" # Updated to a recent version
+      version = "7.17.0" 
     }
     # The community-supported kubectl provider.
     kubectl = {
@@ -15,12 +15,12 @@ terraform {
     # The official Kubernetes provider.
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = "2.30.0" # Updated to a recent version
+      version = "2.30.0" 
     }
     # Provider to manage local files.
     local = {
       source  = "hashicorp/local"
-      version = "2.5.1" # Updated to a recent version
+      version = "2.5.1" 
     }
   }
 }
@@ -41,13 +41,15 @@ data "oci_containerengine_cluster_kube_config" "oke_kubeconfig" {
 }
 
 # Resource to save the fetched kubeconfig content to a local file.
-# This bridges the gap between the data source (content) and the providers (path).
+# This bridges the gap between the data source (which provides content)
+# and the Kubernetes providers (which need a file path).
 resource "local_file" "kubeconfig_file" {
   content  = data.oci_containerengine_cluster_kube_config.oke_kubeconfig.content
   filename = "${path.module}/kubeconfig"
 }
 
 # Configure the Kubernetes provider using the path to the local kubeconfig file.
+# This is a more robust method that avoids issues with executable paths in CI/CD.
 provider "kubernetes" {
   config_path = local_file.kubeconfig_file.filename
 }
