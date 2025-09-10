@@ -115,7 +115,7 @@ resource "oci_core_subnet" "oke_lb_subnet" {
 # Creates the Oracle Kubernetes Engine (OKE) cluster.
 resource "oci_containerengine_cluster" "oke_cluster" {
   compartment_id     = var.compartment_ocid
-  kubernetes_version = "v1.31.10" # Updated to match the image you found
+  kubernetes_version = "1.31.10" # Updated to match the image you found
   name               = "ktor_oke_cluster"
   vcn_id             = oci_core_vcn.oke_vcn.id
   options {
@@ -136,7 +136,11 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
   compartment_id     = var.compartment_ocid
   kubernetes_version = oci_containerengine_cluster.oke_cluster.kubernetes_version
   name               = "amd-pool-free"
-  node_shape         = "VM.Standard.E2.1.Micro" # Always Free AMD shape
+  node_shape         = "VM.Standard.A1.Flex" # Using the "Always Free" Ampere shape
+  node_shape_config {
+    ocpus               = 1 # Specifying "Always Free" tier OCPUs
+    memory_in_gbs       = 6 # Specifying "Always Free" tier memory
+  }
   node_source_details {
     image_id    = var.node_image_ocid
     source_type = "image"
@@ -223,4 +227,5 @@ data "kubernetes_service" "ktor_service" {
     kubernetes_service.ktor_app_service
   ]
 }
+
 
