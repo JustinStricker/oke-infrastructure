@@ -5,7 +5,7 @@ terraform {
     # The official OCI provider from Oracle.
     oci = {
       source  = "oracle/oci"
-      version = "5.48.0" # Updated to a recent version
+      version = "7.17.0" # Updated to a recent version
     }
     # The community-supported kubectl provider.
     kubectl = {
