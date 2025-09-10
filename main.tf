@@ -5,15 +5,20 @@ terraform {
   # in your OCI Object Storage bucket. This provides a persistent "memory"
   # for your infrastructure, solving the issue of state being lost between runs.
   backend "s3" {
-    bucket   = "ktor-oke-app-tfstate"
-    key      = "ktor-oke/terraform.tfstate"
-    region   = "us-east-1" # This is a required placeholder for the S3 provider
-    endpoint = "https://idrolupgk4or.compat.objectstorage.us-ashburn-1.oraclecloud.com"
+    bucket                      = "ktor-oke-app-tfstate"
+    key                         = "ktor-oke/terraform.tfstate"
+    region                      = "us-east-1" # This is a required placeholder for the S3 provider
+    
+    # Use the new endpoints block instead of the deprecated endpoint parameter
+    endpoints = {
+      s3 = "https://idrolupgk4or.compat.objectstorage.us-ashburn-1.oraclecloud.com"
+    }
 
     # Required settings for OCI compatibility
     skip_region_validation      = true
     skip_credentials_validation = true
     force_path_style            = true
+    skip_requesting_account_id  = true # This prevents the backend from trying to validate credentials against AWS
   }
 
   required_providers {
@@ -244,3 +249,4 @@ data "kubernetes_service" "ktor_service" {
     kubernetes_service.ktor_app_service
   ]
 }
+
