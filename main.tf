@@ -1,127 +1,44 @@
 # --- Variable Definitions ---
-# These variables define the inputs for the Terraform configuration.
-# The actual values are provided by the GitHub Actions workflow as secrets.
+variable "tenancy_ocid"       { description = "OCI tenancy OCID"; type = string }
+variable "user_ocid"          { description = "OCI user OCID"; type = string }
+variable "fingerprint"        { description = "API key fingerprint"; type = string }
+variable "private_key"        { description = "Private API key content"; type = string; sensitive = true }
+variable "region"             { description = "OCI region"; type = string }
+variable "compartment_ocid"   { description = "Target compartment OCID"; type = string }
+variable "node_image_ocid"    { description = "OKE node image OCID"; type = string }
+variable "docker_image"       { description = "Docker image URL"; type = string }
+variable "tenancy_namespace"  { description = "OCIR namespace"; type = string }
 
-variable "tenancy_ocid" {
-  description = "The OCID of the OCI tenancy."
-  type        = string
-}
-
-variable "user_ocid" {
-  description = "The OCID of the OCI user."
-  type        = string
-}
-
-variable "fingerprint" {
-  description = "The fingerprint of the API key."
-  type        = string
-}
-
-variable "private_key" {
-  description = "The content of the private API key file."
-  type        = string
-  sensitive   = true
-}
-
-variable "region" {
-  description = "The OCI region to deploy resources in."
-  type        = string
-}
-
-variable "compartment_ocid" {
-  description = "The OCID of the compartment to create resources in."
-  type        = string
-}
-
-variable "node_image_ocid" {
-  description = "The OCID of the OKE worker node image."
-  type        = string
-}
-
-variable "docker_image" {
-  description = "The full URL of the Docker image to deploy."
-  type        = string
-}
-
-variable "tenancy_namespace" {
-  description = "The OCI tenancy namespace for OCIR."
-  type        = string
-}
-
-
-# --- Terraform and Provider Configuration ---
-
-# This block configures Terraform itself and the required providers.
+# --- Terraform Backend & Providers ---
 terraform {
-  # This backend block configures Terraform to store its state file remotely
-  # in your OCI Object Storage bucket. This provides a persistent "memory"
-  # for your infrastructure, solving the issue of state being lost between runs.
   backend "s3" {
-    bucket               = "ktor-oke-app-tfstate"
-    key                  = "ktor-oke/terraform.tfstate"
-    region               = "us-east-1" # This is a required placeholder for the S3 provider
-    endpoint             = "https://idrolupgk4or.compat.objectstorage.us-ashburn-1.oraclecloud.com"
-
-    # Required settings for OCI compatibility
+    bucket                      = "ktor-oke-app-tfstate"
+    key                         = "ktor-oke/terraform.tfstate"
+    region                      = "us-east-1"
+    endpoint                    = "https://idrolupgk4or.compat.objectstorage.us-ashburn-1.oraclecloud.com"
     skip_region_validation      = true
     skip_credentials_validation = true
-    use_path_style              = true # Updated from deprecated 'force_path_style'
-    skip_requesting_account_id  = true # Prevents the backend from trying to validate credentials against AWS
+    use_path_style              = true
+    skip_requesting_account_id  = true
   }
 
   required_providers {
-    oci = {
-      source  = "oracle/oci"
-      version = "7.17.0"
-    }
-    kubectl = {
-      source  = "gavinbunney/kubectl"
-      version = "1.14.0"
-    }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "2.30.0"
-    }
-    local = {
-      source  = "hashicorp/local"
-      version = "2.5.1"
-    }
+    oci         = { source = "oracle/oci", version = "7.17.0" }
+    kubectl     = { source = "gavinbunney/kubectl", version = "1.14.0" }
+    kubernetes  = { source = "hashicorp/kubernetes", version = "2.30.0" }
+    local       = { source = "hashicorp/local", version = "2.5.1" }
   }
 }
 
-# Configure the Oracle Cloud Infrastructure (OCI) provider with credentials.
 provider "oci" {
-  tenancy_ocid     = var.tenancy_ocid
-  user_ocid        = var.user_ocid
-  fingerprint      = var.fingerprint
-  private_key      = var.private_key
-  region           = var.region
+  tenancy_ocid = var.tenancy_ocid
+  user_ocid    = var.user_ocid
+  fingerprint  = var.fingerprint
+  private_key  = var.private_key
+  region       = var.region
 }
 
-# Data source to fetch the kubeconfig for the OKE cluster.
-data "oci_containerengine_cluster_kube_config" "oke_kubeconfig" {
-  cluster_id = oci_containerengine_cluster.oke_cluster.id
-}
-
-# Resource to save the fetched kubeconfig content to a local file.
-resource "local_file" "kubeconfig_file" {
-  content  = data.oci_containerengine_cluster_kube_config.oke_kubeconfig.content
-  filename = "${path.module}/kubeconfig"
-}
-
-# Configure the Kubernetes provider using the path to the local kubeconfig file.
-provider "kubernetes" {
-  config_path = local_file.kubeconfig_file.filename
-}
-
-# Configure the kubectl provider using the path to the local kubeconfig file.
-provider "kubectl" {
-  config_path = local_file.kubeconfig_file.filename
-}
-
-
-# --- Networking Resources ---
-
+# --- Networking ---
 data "oci_identity_availability_domains" "ads" {
   compartment_id = var.tenancy_ocid
 }
@@ -167,9 +84,7 @@ resource "oci_core_subnet" "oke_lb_subnet" {
   dhcp_options_id    = oci_core_vcn.oke_vcn.default_dhcp_options_id
 }
 
-
-# --- OKE Cluster Resources ---
-
+# --- OKE Cluster ---
 resource "oci_containerengine_cluster" "oke_cluster" {
   compartment_id     = var.compartment_ocid
   kubernetes_version = "v1.33.1"
@@ -194,8 +109,8 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
   name               = "amd-pool-free"
   node_shape         = "VM.Standard.A1.Flex"
   node_shape_config {
-    ocpus               = 1
-    memory_in_gbs       = 6
+    ocpus         = 1
+    memory_in_gbs = 6
   }
   node_source_details {
     image_id    = var.node_image_ocid
@@ -210,13 +125,29 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
   }
 }
 
+# --- Kubeconfig Bootstrap ---
+data "oci_containerengine_cluster_kube_config" "oke_kubeconfig" {
+  cluster_id = oci_containerengine_cluster.oke_cluster.id
+}
 
-# --- Kubernetes Deployment Resources ---
+resource "local_file" "kubeconfig_file" {
+  content  = data.oci_containerengine_cluster_kube_config.oke_kubeconfig.content
+  filename = "${path.module}/kubeconfig"
+}
 
+provider "kubernetes" {
+  config_path = local_file.kubeconfig_file.filename
+  depends_on  = [local_file.kubeconfig_file]
+}
+
+provider "kubectl" {
+  config_path = local_file.kubeconfig_file.filename
+  depends_on  = [local_file.kubeconfig_file]
+}
+
+# --- Kubernetes Resources ---
 resource "kubernetes_namespace" "app_ns" {
-  metadata {
-    name = "ktor-app"
-  }
+  metadata { name = "ktor-app" }
 }
 
 resource "kubernetes_deployment" "ktor_app_deployment" {
@@ -227,23 +158,17 @@ resource "kubernetes_deployment" "ktor_app_deployment" {
   spec {
     replicas = 1
     selector {
-      match_labels = {
-        app = "ktor-app"
-      }
+      match_labels = { app = "ktor-app" }
     }
     template {
       metadata {
-        labels = {
-          app = "ktor-app"
-        }
+        labels = { app = "ktor-app" }
       }
       spec {
         container {
           image = var.docker_image
           name  = "ktor-app-container"
-          port {
-            container_port = 8080
-          }
+          port  { container_port = 8080 }
         }
       }
     }
@@ -268,25 +193,15 @@ resource "kubernetes_service" "ktor_app_service" {
   }
 }
 
-
-# --- Data Sources for Outputs ---
-
 data "kubernetes_service" "ktor_service" {
   metadata {
     name      = kubernetes_service.ktor_app_service.metadata[0].name
     namespace = kubernetes_namespace.app_ns.metadata[0].name
   }
-  depends_on = [
-    kubernetes_service.ktor_app_service
-  ]
+  depends_on = [kubernetes_service.ktor_app_service]
 }
 
-
-# --- Outputs ---
-
-# This output will display the public IP address of the load balancer.
 output "load_balancer_ip" {
   description = "Public IP address of the Ktor application's load balancer."
   value       = data.kubernetes_service.ktor_service.status[0].load_balancer[0].ingress[0].ip
 }
-
