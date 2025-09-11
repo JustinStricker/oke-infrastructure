@@ -80,14 +80,8 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
       
-      # FIXED: Corrected syntax from "name." to "name:" and removed problematic 'exec'
-      - name: Install OCI CLI
-        run: |
-          curl -L -o oci-cli.sh https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh
-          bash oci-cli.sh --accept-all-defaults
-          echo "/home/runner/bin" >> $GITHUB_PATH
-          oci --version
-          
+      # REMOVED: The OCI CLI installation step is no longer necessary.
+      
       - name: Terraform Init
         run: terraform init
 
