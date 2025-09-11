@@ -12,15 +12,16 @@ jobs:
       OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
       OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
       OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-      OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}  # raw PEM format
+      OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}
       OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
 
       # Terraform provider variables
       TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
       TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
       TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
-      TF_VAR_private_key_base64: ${{ secrets.OCI_PRIVATE_KEY_BASE64 }}  # base64-encoded PEM
       TF_VAR_region: ${{ secrets.OCI_REGION }}
+      TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+      TF_VAR_node_image_ocid: ${{ secrets.OCI_NODE_IMAGE_OCID }}
 
     steps:
       - name: Checkout Repository
@@ -57,11 +58,13 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
 
-      - name: Decode and verify private key (optional debug)
+      - name: Write OCI private key to file
         run: |
-          echo "$TF_VAR_private_key_base64" | base64 -d > decoded_key.pem
-          head -n 5 decoded_key.pem
-          openssl rsa -in decoded_key.pem -check || echo "Key format invalid"
+          echo "${{ secrets.OCI_PRIVATE_KEY }}" > oci_api_key.pem
+          echo "TF_VAR_private_key_path=$(pwd)/oci_api_key.pem" >> $GITHUB_ENV
+
+      - name: Validate private key format
+        run: openssl rsa -in oci_api_key.pem -check
 
       - name: Terraform Init
         run: terraform init
@@ -70,7 +73,5 @@ jobs:
         run: |
           terraform apply -auto-approve \
             -var="docker_image=${{ steps.build-image.outputs.image_url }}" \
-            -var="node_image_ocid=${{ secrets.OCI_NODE_IMAGE_OCID }}" \
-            -var="compartment_ocid=${{ secrets.OCI_COMPARTMENT_OCID }}" \
             -var="tenancy_namespace=${{ steps.get-ocir-repository.outputs.namespace }}"
 
