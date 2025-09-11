@@ -231,7 +231,6 @@ resource "kubernetes_deployment" "ktor_app_deployment" {
           image = var.docker_image # The image built and pushed by the workflow
           name  = "ktor-oke-app-container"
           
-          # This is the corrected block name
           port {
             container_port = 8080 # The port your application listens on
           }
@@ -255,7 +254,8 @@ resource "kubernetes_service" "ktor_app_service" {
       app = kubernetes_deployment.ktor_app_deployment.metadata[0].labels.app
     }
 
-    ports {
+    # This is the corrected block name
+    port {
       port        = 80   # Expose port 80 on the load balancer
       target_port = 8080 # Route traffic to port 8080 on the containers
     }
