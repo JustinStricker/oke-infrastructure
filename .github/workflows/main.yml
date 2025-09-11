@@ -7,17 +7,15 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    # Define OCI credentials as environment variables for the entire job.
-    # This ensures all steps have access to the necessary secrets.
     env:
-      # Credentials for the Oracle Actions (get-ocir-repository, login-ocir)
-      OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
+      # These credentials are still needed for the Oracle Actions to work
       OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
+      OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
       OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
       OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}
       OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
 
-      # Credentials for the Terraform OCI Provider
+      # These credentials are still needed for the Terraform OCI provider
       TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
       TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
       TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
@@ -27,21 +25,6 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
-
-      - name: Setup OCI Config File
-        run: |
-          set -eo pipefail
-          mkdir -p ~/.oci
-          echo "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/key.pem
-          chmod 600 ~/.oci/key.pem
-          cat > ~/.oci/config <<-EOF
-          [DEFAULT]
-          user=${{ secrets.OCI_USER_OCID }}
-          fingerprint=${{ secrets.OCI_FINGERPRINT }}
-          tenancy=${{ secrets.OCI_TENANCY_OCID }}
-          region=${{ secrets.OCI_REGION }}
-          key_file=~/.oci/key.pem
-          EOF
 
       - name: Get or create an OCIR Repository
         id: get-ocir-repository
@@ -74,11 +57,7 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
       
-      - name: Install OCI CLI
-        run: |
-          curl -L -o oci-cli.sh https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh
-          bash oci-cli.sh --accept-all-defaults
-          echo "/home/runner/bin" >> $GITHUB_PATH
+      # REMOVED: The "Setup OCI Config File" and "Install OCI CLI" steps are no longer needed.
           
       - name: Terraform Init
         run: terraform init
