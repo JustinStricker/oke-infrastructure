@@ -7,22 +7,9 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    # This env block is now much simpler.
+    # We only need the TF_VARs for the OCI provider configuration.
     env:
-      # --- Standard OCI SDK Variables (Required by Terraform) ---
-      OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
-      OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
-      OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-      OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
-      OCI_REGION: ${{ secrets.OCI_REGION }}
-
-      # --- OCI CLI-Specific Variables (for other tools) ---
-      OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
-      OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
-      OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-      OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}
-      OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
-
-      # --- Terraform Provider Input Variables ---
       TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
       TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
       TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
@@ -33,7 +20,27 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      # ... (steps for OCIR, Gradle, Docker build remain the same) ...
+      # --- NEW AUTHENTICATION STEP ---
+      # This is the most reliable way to handle OCI authentication in CI/CD.
+      # It creates the config and key files that all OCI tools expect.
+      - name: Setup OCI Config File
+        run: |
+          set -eo pipefail # Fail on any error
+          mkdir -p ~/.oci
+          echo "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/key.pem
+          # Ensure the key file has the correct permissions
+          chmod 600 ~/.oci/key.pem
+          
+          cat > ~/.oci/config <<-EOF
+          [DEFAULT]
+          user=${{ secrets.OCI_USER_OCID }}
+          fingerprint=${{ secrets.OCI_FINGERPRINT }}
+          tenancy=${{ secrets.OCI_TENANCY_OCID }}
+          region=${{ secrets.OCI_REGION }}
+          key_file=~/.oci/key.pem
+          EOF
+          echo "OCI config file created successfully."
+
       - name: Get or create an OCIR Repository
         id: get-ocir-repository
         uses: oracle-actions/get-ocir-repository@v1.3.0
@@ -72,16 +79,6 @@ jobs:
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
-
-      # --- NEW DEBUGGING STEP ---
-      - name: Debug OCI Authentication Variables
-        run: |
-          echo "OCI_REGION is: $OCI_REGION"
-          echo "OCI_USER_OCID is set: ${{ env.OCI_USER_OCID != '' }}"
-          echo "OCI_PRIVATE_KEY is set: ${{ env.OCI_PRIVATE_KEY != '' }}"
-          echo "OCI_PRIVATE_KEY length: $(echo -n "$OCI_PRIVATE_KEY" | wc -c)"
-          echo "Does key start correctly? $(echo "$OCI_PRIVATE_KEY" | grep -q "^-----BEGIN PRIVATE KEY-----$" && echo "Yes" || echo "No")"
-          echo "Does key end correctly? $(echo "$OCI_PRIVATE_KEY" | grep -q "^-----END PRIVATE KEY-----$" && echo "Yes" || echo "No")"
           
       - name: Terraform Init
         run: terraform init
