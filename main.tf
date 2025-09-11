@@ -1,4 +1,41 @@
+# --- Terraform Backend & Providers ---
+terraform {
+  # Stores the state file remotely in OCI Object Storage for safety and collaboration
+  backend "oci" {
+    bucket    = "ktor-oke-app-tfstate"
+    key       = "ktor-oke/terraform.tfstate"
+    region    = "us-ashburn-1"
+    namespace = "idrolupgk4or"
+  }
+
+  required_providers {
+    oci = {
+      source  = "oracle/oci"
+      version = "5.55.0"
+    }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "2.31.0"
+    }
+    local = {
+      source  = "hashicorp/local"
+      version = "2.5.1"
+    }
+  }
+}
+
+# Provider for managing Oracle Cloud Infrastructure resources
+provider "oci" {
+  tenancy_ocid = var.tenancy_ocid
+  user_ocid    = var.user_ocid
+  fingerprint  = var.fingerprint
+  private_key  = var.private_key
+  region       = var.region
+}
+
 # --- Variable Definitions ---
+# These variables receive their values from the GitHub Actions workflow environment
+
 variable "tenancy_ocid" {
   description = "OCI tenancy OCID"
   type        = string
@@ -26,56 +63,23 @@ variable "region" {
 }
 
 variable "compartment_ocid" {
-  description = "Target compartment OCID"
+  description = "Target compartment OCID where resources will be created"
   type        = string
 }
 
 variable "node_image_ocid" {
-  description = "OKE node image OCID"
+  description = "The OCID of the image to use for the OKE worker nodes"
   type        = string
 }
 
 variable "docker_image" {
-  description = "Docker image URL"
+  description = "The full URL of the Docker image built by the CI/CD pipeline"
   type        = string
 }
 
 variable "tenancy_namespace" {
-  description = "OCIR namespace"
+  description = "The Object Storage namespace, used for OCIR"
   type        = string
-}
-
-# --- Terraform Backend & Providers ---
-terraform {
-  backend "oci" {
-    bucket    = "ktor-oke-app-tfstate"
-    key       = "ktor-oke/terraform.tfstate"
-    region    = "us-ashburn-1"
-    namespace = "idrolupgk4or"
-  }
-
-  required_providers {
-    oci = {
-      source  = "oracle/oci"
-      version = "5.55.0" # Updated to newest version
-    }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "2.31.0" # Updated to newest version
-    }
-    local = {
-      source  = "hashicorp/local"
-      version = "2.5.1" # Already at newest version
-    }
-  }
-}
-
-provider "oci" {
-  tenancy_ocid = var.tenancy_ocid
-  user_ocid    = var.user_ocid
-  fingerprint  = var.fingerprint
-  private_key  = var.private_key
-  region       = var.region
 }
 
 # --- Networking ---
@@ -186,18 +190,18 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
 }
 
 # --- Kubeconfig Bootstrap ---
-# NEW: Fetch the kubeconfig content directly from OCI
+# Fetch the kubeconfig content directly from OCI
 data "oci_containerengine_cluster_kube_config" "oke_kube_config" {
   cluster_id = oci_containerengine_cluster.oke_cluster.id
 }
 
-# NEW: Save the fetched content to a temporary file
+# Save the fetched content to a temporary file
 resource "local_file" "kubeconfig_file" {
   content  = data.oci_containerengine_cluster_kube_config.oke_kube_config.content
   filename = "${path.module}/kubeconfig"
 }
 
-# UPDATED: Configure the provider to use the temporary file path
+# Configure the provider to use the temporary file path
 provider "kubernetes" {
   config_path = local_file.kubeconfig_file.filename
   depends_on  = [local_file.kubeconfig_file]
