@@ -2,15 +2,18 @@ terraform {
   required_providers {
     oci = {
       source  = "oracle/oci"
+      # Updated to the latest version
       version = "7.17.0"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = "2.31.0"
+      # Updated to the latest version
+      version = "2.38.0"
     }
     local = {
       source  = "hashicorp/local"
-      version = "2.5.1"
+      # Updated to the latest version
+      version = "2.5.3"
     }
   }
 
@@ -31,8 +34,7 @@ provider "oci" {
 }
 
 provider "kubernetes" {
-  # CORRECTED: Use a static path for the provider configuration.
-  # This path will be created by the "local_file" resource below.
+  # This static path is required. It will be created by the "local_file" resource.
   config_path = "./kubeconfig"
 }
 
@@ -108,8 +110,11 @@ resource "oci_identity_policy" "oke_nodes_ocir_policy" {
 }
 
 resource "oci_containerengine_cluster" "oke_cluster" {
-  compartment_id     = var.compartment_ocid
-  kubernetes_version = "v1.30.3" # Note: Updated to a more recent, valid version
+  compartment_id = var.compartment_ocid
+  # REVERTED: Set back to the version from the original log.
+  # Note: OCI may reject this version if it's not supported. You may need to
+  #       select a valid version from the OCI documentation if this fails.
+  kubernetes_version = "v1.33.1"
   name               = "ktor_oke_cluster"
   vcn_id             = oci_core_vcn.oke_vcn.id
   options {
@@ -181,8 +186,7 @@ resource "kubernetes_deployment" "ktor_app_deployment" {
     }
   }
 
-  # CORRECTED: This resource must depend on the creation of the
-  # kubeconfig file to ensure the Kubernetes provider can authenticate.
+  # This dependency is critical for the workflow to succeed.
   depends_on = [local_file.kubeconfig_file]
 }
 
@@ -201,7 +205,7 @@ resource "kubernetes_service" "ktor_app_service" {
     type = "LoadBalancer"
   }
 
-  # CORRECTED: Add the same dependency here for consistency and safety.
+  # This dependency is critical for the workflow to succeed.
   depends_on = [local_file.kubeconfig_file]
 }
 
