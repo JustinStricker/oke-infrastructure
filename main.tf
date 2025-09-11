@@ -23,62 +23,26 @@ terraform {
 }
 
 provider "oci" {
-  tenancy_ocid = var.tenancy_ocid
-  user_ocid    = var.user_ocid
-  fingerprint  = var.fingerprint
-  private_key  = base64decode(var.private_key_base64)
-  region       = var.region
+  tenancy_ocid     = var.tenancy_ocid
+  user_ocid        = var.user_ocid
+  fingerprint      = var.fingerprint
+  private_key_path = var.private_key_path
+  region           = var.region
 }
 
 provider "kubernetes" {
   config_path = local_file.kubeconfig_file.filename
 }
 
-variable "tenancy_ocid" {
-  type        = string
-  description = "OCI tenancy OCID"
-}
-
-variable "user_ocid" {
-  type        = string
-  description = "OCI user OCID"
-}
-
-variable "fingerprint" {
-  type        = string
-  description = "API key fingerprint"
-}
-
-variable "private_key_base64" {
-  type        = string
-  sensitive   = true
-  description = "Base64-encoded private key"
-}
-
-variable "region" {
-  type        = string
-  description = "OCI region"
-}
-
-variable "compartment_ocid" {
-  type        = string
-  description = "Target compartment OCID"
-}
-
-variable "node_image_ocid" {
-  type        = string
-  description = "OCID of the image for OKE worker nodes"
-}
-
-variable "docker_image" {
-  type        = string
-  description = "Full URL of the Docker image"
-}
-
-variable "tenancy_namespace" {
-  type        = string
-  description = "Object Storage namespace for OCIR"
-}
+variable "tenancy_ocid" {}
+variable "user_ocid" {}
+variable "fingerprint" {}
+variable "private_key_path" {}
+variable "region" {}
+variable "compartment_ocid" {}
+variable "node_image_ocid" {}
+variable "docker_image" {}
+variable "tenancy_namespace" {}
 
 data "oci_identity_availability_domains" "ads" {
   compartment_id = var.tenancy_ocid
@@ -241,4 +205,3 @@ output "load_balancer_ip" {
     "creating..."
   )
 }
-
