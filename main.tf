@@ -2,17 +2,14 @@ terraform {
   required_providers {
     oci = {
       source  = "oracle/oci"
-      # Updated to the latest version
       version = "7.17.0"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      # Updated to the latest version
       version = "2.38.0"
     }
     local = {
       source  = "hashicorp/local"
-      # Updated to the latest version
       version = "2.5.3"
     }
   }
@@ -33,9 +30,12 @@ provider "oci" {
   region           = var.region
 }
 
+# CORRECTED PROVIDER CONFIGURATION:
+# This new block authenticates directly without needing a kubeconfig file or the OCI CLI.
 provider "kubernetes" {
-  # This static path is required. It will be created by the "local_file" resource.
-  config_path = "./kubeconfig"
+  host                   = oci_containerengine_cluster.oke_cluster.endpoints[0].kubernetes
+  cluster_ca_certificate = base64decode(oci_containerengine_cluster.oke_cluster.endpoints[0].ca_certificate)
+  token                  = data.oci_containerengine_cluster_auth_token.oke_auth_token.token
 }
 
 variable "tenancy_ocid" {}
@@ -50,6 +50,12 @@ variable "tenancy_namespace" {}
 
 data "oci_identity_availability_domains" "ads" {
   compartment_id = var.tenancy_ocid
+}
+
+# NEW DATA SOURCE:
+# This generates the short-lived authentication token needed by the provider.
+data "oci_containerengine_cluster_auth_token" "oke_auth_token" {
+  cluster_id = oci_containerengine_cluster.oke_cluster.id
 }
 
 resource "oci_core_vcn" "oke_vcn" {
@@ -110,10 +116,7 @@ resource "oci_identity_policy" "oke_nodes_ocir_policy" {
 }
 
 resource "oci_containerengine_cluster" "oke_cluster" {
-  compartment_id = var.compartment_ocid
-  # REVERTED: Set back to the version from the original log.
-  # Note: OCI may reject this version if it's not supported. You may need to
-  #       select a valid version from the OCI documentation if this fails.
+  compartment_id     = var.compartment_ocid
   kubernetes_version = "v1.33.1"
   name               = "ktor_oke_cluster"
   vcn_id             = oci_core_vcn.oke_vcn.id
@@ -151,15 +154,6 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
   depends_on = [oci_identity_policy.oke_nodes_ocir_policy]
 }
 
-data "oci_containerengine_cluster_kube_config" "oke_kube_config" {
-  cluster_id = oci_containerengine_cluster.oke_cluster.id
-}
-
-resource "local_file" "kubeconfig_file" {
-  content  = data.oci_containerengine_cluster_kube_config.oke_kube_config.content
-  filename = "./kubeconfig"
-}
-
 resource "kubernetes_deployment" "ktor_app_deployment" {
   metadata {
     name   = "ktor-oke-app"
@@ -185,9 +179,7 @@ resource "kubernetes_deployment" "ktor_app_deployment" {
       }
     }
   }
-
-  # This dependency is critical for the workflow to succeed.
-  depends_on = [local_file.kubeconfig_file]
+  # No longer need depends_on, as the provider configuration creates the dependency automatically.
 }
 
 resource "kubernetes_service" "ktor_app_service" {
@@ -204,9 +196,7 @@ resource "kubernetes_service" "ktor_app_service" {
     }
     type = "LoadBalancer"
   }
-
-  # This dependency is critical for the workflow to succeed.
-  depends_on = [local_file.kubeconfig_file]
+  # No longer need depends_on.
 }
 
 output "load_balancer_ip" {
