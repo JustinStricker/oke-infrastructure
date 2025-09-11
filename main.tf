@@ -1,33 +1,4 @@
-# --- Terraform Backend & Providers ---
-terraform {
-  # Stores the state file remotely in OCI Object Storage for safety and collaboration
-  backend "oci" {
-    bucket    = "ktor-oke-app-tfstate"
-    key       = "ktor-oke/terraform.tfstate"
-    region    = "us-ashburn-1"
-    namespace = "idrolupgk4or"
-  }
-
-  required_providers {
-    # IMPROVEMENT: Pinning to the minor version (~>) prevents breaking changes 
-    # from major version updates while still allowing patches.
-    oci        = { source = "oracle/oci", version = "~> 5.0" }
-    kubernetes = { source = "hashicorp/kubernetes", version = "~> 2.20" }
-  }
-}
-
-# Provider for managing Oracle Cloud Infrastructure resources
-provider "oci" {
-  tenancy_ocid = var.tenancy_ocid
-  user_ocid    = var.user_ocid
-  fingerprint  = var.fingerprint
-  private_key  = var.private_key
-  region       = var.region
-}
-
 # --- Variable Definitions ---
-# These variables receive their values from the GitHub Actions workflow environment
-
 variable "tenancy_ocid" {
   description = "OCI tenancy OCID"
   type        = string
@@ -55,23 +26,48 @@ variable "region" {
 }
 
 variable "compartment_ocid" {
-  description = "Target compartment OCID where resources will be created"
+  description = "Target compartment OCID"
   type        = string
 }
 
 variable "node_image_ocid" {
-  description = "The OCID of the image to use for the OKE worker nodes"
+  description = "OKE node image OCID"
   type        = string
 }
 
 variable "docker_image" {
-  description = "The full URL of the Docker image built by the CI/CD pipeline"
+  description = "Docker image URL"
   type        = string
 }
 
 variable "tenancy_namespace" {
-  description = "The Object Storage namespace, used for OCIR"
+  description = "OCIR namespace"
   type        = string
+}
+
+# --- Terraform Backend & Providers ---
+terraform {
+  backend "oci" {
+    bucket    = "ktor-oke-app-tfstate"
+    key       = "ktor-oke/terraform.tfstate"
+    region    = "us-ashburn-1"
+    namespace = "idrolupgk4or"
+  }
+
+  required_providers {
+    oci        = { source = "oracle/oci", version = ">= 5.0" }
+    kubernetes = { source = "hashicorp/kubernetes", version = ">= 2.20" }
+    # NEW: Added the 'local' provider to manage files
+    local      = { source = "hashicorp/local", version = "2.5.1" }
+  }
+}
+
+provider "oci" {
+  tenancy_ocid = var.tenancy_ocid
+  user_ocid    = var.user_ocid
+  fingerprint  = var.fingerprint
+  private_key  = var.private_key
+  region       = var.region
 }
 
 # --- Networking ---
@@ -120,20 +116,17 @@ resource "oci_core_subnet" "oke_lb_subnet" {
   dhcp_options_id   = oci_core_vcn.oke_vcn.default_dhcp_options_id
 }
 
-# --- IAM Policy for OKE Worker Nodes to access OCIR (BEST PRACTICE) ---
+# --- IAM Policy for OKE Worker Nodes to access OCIR ---
 resource "oci_identity_dynamic_group" "oke_nodes_dynamic_group" {
   provider       = oci
-  # IAM resources must be created in the root compartment (tenancy)
   compartment_id = var.tenancy_ocid
   description    = "Dynamic group for OKE worker nodes to pull images from OCIR"
   name           = "oke-nodes-dynamic-group"
-  # This rule automatically includes all VMs in the target compartment
-  matching_rule  = "ALL {instance.compartment.id = '${var.compartment_ocid}'}"
+  matching_rule  = "ALL {instance.compartment.id = '${var.compartment_ocid}', resource.type = 'instance'}"
 }
 
 resource "oci_identity_policy" "oke_nodes_ocir_policy" {
   provider       = oci
-  # IAM resources must be created in the root compartment (tenancy)
   compartment_id = var.tenancy_ocid
   description    = "Allow OKE nodes to read container images from OCIR"
   name           = "oke-nodes-ocir-policy"
@@ -145,7 +138,6 @@ resource "oci_identity_policy" "oke_nodes_ocir_policy" {
 # --- OKE Cluster ---
 resource "oci_containerengine_cluster" "oke_cluster" {
   compartment_id     = var.compartment_ocid
-  # NOTE: Kubernetes version is kept at v1.33.1 as requested.
   kubernetes_version = "v1.33.1"
   name               = "ktor_oke_cluster"
   vcn_id             = oci_core_vcn.oke_vcn.id
@@ -180,44 +172,35 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
     }
     size = 1
   }
-
   depends_on = [
     oci_identity_policy.oke_nodes_ocir_policy
   ]
 }
 
 # --- Kubeconfig Bootstrap ---
-# This block configures the Kubernetes provider to authenticate with the new OKE cluster
-# by using the OCI CLI to generate a temporary token.
+# NEW: Fetch the kubeconfig content directly from OCI
+data "oci_containerengine_cluster_kube_config" "oke_kube_config" {
+  cluster_id = oci_containerengine_cluster.oke_cluster.id
+}
+
+# NEW: Save the fetched content to a temporary file
+resource "local_file" "kubeconfig_file" {
+  content  = data.oci_containerengine_cluster_kube_config.oke_kube_config.content
+  filename = "${path.module}/kubeconfig"
+}
+
+# UPDATED: Configure the provider to use the temporary file path
 provider "kubernetes" {
-  host = oci_containerengine_cluster.oke_cluster.endpoints[0].kubernetes
-
-  cluster_ca_certificate = base64decode(oci_containerengine_cluster.oke_cluster.endpoints[0].cluster_ca_certificate)
-
-  exec {
-    api_version = "client.authentication.k8s.io/v1beta1"
-    command     = "oci"
-    args        = ["ce", "cluster", "generate-token", "--cluster-id", oci_containerengine_cluster.oke_cluster.id]
-  }
+  config_path = local_file.kubeconfig_file.filename
+  depends_on  = [local_file.kubeconfig_file]
 }
 
 # --- Kubernetes Application Deployment ---
-resource "kubernetes_namespace" "app_ns" {
-  metadata {
-    name = "ktor-app"
-  }
-}
-
-# REMOVED: The kubernetes_secret and associated auth_token variable are no longer necessary.
-# The IAM policy for the node pool is the more secure and modern way to grant the cluster
-# access to pull images from OCIR.
-
 resource "kubernetes_deployment" "ktor_app_deployment" {
   provider = kubernetes
   metadata {
-    name      = "ktor-oke-app"
-    labels    = { app = "ktor-oke-app" }
-    namespace = kubernetes_namespace.app_ns.metadata[0].name
+    name   = "ktor-oke-app"
+    labels = { app = "ktor-oke-app" }
   }
   spec {
     replicas = 2
@@ -229,8 +212,6 @@ resource "kubernetes_deployment" "ktor_app_deployment" {
         labels = { app = "ktor-oke-app" }
       }
       spec {
-        # REMOVED: The image_pull_secrets block is no longer needed.
-        # The worker nodes now have native IAM permission to access OCIR.
         container {
           image = var.docker_image
           name  = "ktor-oke-app-container"
@@ -241,7 +222,6 @@ resource "kubernetes_deployment" "ktor_app_deployment" {
       }
     }
   }
-
   depends_on = [
     oci_containerengine_node_pool.oke_node_pool
   ]
@@ -250,8 +230,7 @@ resource "kubernetes_deployment" "ktor_app_deployment" {
 resource "kubernetes_service" "ktor_app_service" {
   provider = kubernetes
   metadata {
-    name      = "ktor-oke-app-service"
-    namespace = kubernetes_namespace.app_ns.metadata[0].name
+    name = "ktor-oke-app-service"
   }
   spec {
     selector = {
@@ -263,22 +242,16 @@ resource "kubernetes_service" "ktor_app_service" {
     }
     type = "LoadBalancer"
   }
-
   depends_on = [
     oci_containerengine_node_pool.oke_node_pool
   ]
 }
 
-data "kubernetes_service" "ktor_service" {
-  provider = kubernetes
-  metadata {
-    name      = kubernetes_service.ktor_app_service.metadata[0].name
-    namespace = kubernetes_namespace.app_ns.metadata[0].name
-  }
-  depends_on = [kubernetes_service.ktor_app_service]
-}
-
+# --- Outputs ---
 output "load_balancer_ip" {
   description = "Public IP address of the Ktor application's load balancer."
-  value       = data.kubernetes_service.ktor_service.status[0].load_balancer[0].ingress[0].ip
+  value = try(
+    kubernetes_service.ktor_app_service.status[0].load_balancer[0].ingress[0].ip,
+    "creating..."
+  )
 }
