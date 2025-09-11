@@ -8,23 +8,24 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     env:
-      # OCI credentials are still needed for the OCI provider and backend
+      # --- OCI CLI Variables ---
+      # These are used by tools like oracle-actions/login-ocir
       OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
       OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
       OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
       OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}
       OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
 
-      # REMOVED: AWS variables are no longer needed since we switched
-      # to the native "oci" Terraform backend.
-      # AWS_ACCESS_KEY_ID: ...
-      # AWS_SECRET_ACCESS_KEY: ...
-      # AWS_REGION: ...
-      # AWS_DEFAULT_REGION: ...
-      # AWS_S3_SIGNATURE_VERSION: ...
-      # AWS_S3_US_EAST_1_REGIONAL_ENDPOINT: ...
+      # --- Standard OCI SDK Variables (FIX) ---
+      # These are required by the Terraform OCI Provider for backend authentication
+      OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+      OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+      OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+      OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }} # This is the crucial missing variable
+      OCI_REGION: ${{ secrets.OCI_REGION }}
 
-      # TF_VARs are still needed to pass secrets to the OCI provider
+      # --- Terraform Provider Variables ---
+      # These pass the values into your Terraform configuration
       TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
       TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
       TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
@@ -34,11 +35,6 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
-
-      # REMOVED: This step is no longer required because the native
-      # OCI backend does not have the same signing issues.
-      # - name: Set OCI S3 Compatibility Flags
-      #   run: echo "AWS_S3_USE_UNSIGNED_PAYLOAD=true" >> $GITHUB_ENV
 
       - name: Get or create an OCIR Repository
         id: get-ocir-repository
