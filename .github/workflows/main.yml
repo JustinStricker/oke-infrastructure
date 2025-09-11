@@ -8,14 +8,12 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     env:
-      # OCI CLI credentials (used by Terraform backend)
+      # Map GitHub Secrets to environment variables for Terraform and OCI tools.
       OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
       OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
       OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
       OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}
       OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
-
-      # Terraform provider variables
       TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
       TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
       TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
@@ -24,6 +22,7 @@ jobs:
       TF_VAR_node_image_ocid: ${{ secrets.OCI_NODE_IMAGE_OCID }}
 
     steps:
+      # 1. SETUP AND BUILD PHASE
       - name: Checkout Repository
         uses: actions/checkout@v3
 
@@ -55,23 +54,22 @@ jobs:
           docker push $IMAGE_URL
           echo "image_url=$IMAGE_URL" >> $GITHUB_OUTPUT
 
+      # 2. DEPLOYMENT PHASE (NOW SIMPLIFIED)
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
 
       - name: Write OCI private key to file
+        # The OCI provider needs the private key to be in a file.
         run: |
           echo "${{ secrets.OCI_PRIVATE_KEY }}" > oci_api_key.pem
           echo "TF_VAR_private_key_path=$(pwd)/oci_api_key.pem" >> $GITHUB_ENV
 
-      - name: Validate private key format
-        run: openssl rsa -in oci_api_key.pem -check
-
       - name: Terraform Init
+        # Initializes the backend and downloads providers.
         run: terraform init
 
-      # SIMPLIFIED: Reverted to a single, clean apply step.
-      # The OCI CLI installation and two-step apply are no longer needed.
       - name: Terraform Apply
+        # A single, clean apply command. The complexity is handled by Terraform.
         run: |
           terraform apply -auto-approve \
             -var="docker_image=${{ steps.build-image.outputs.image_url }}" \
