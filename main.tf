@@ -1,13 +1,49 @@
 # --- Variable Definitions ---
-variable "tenancy_ocid"       { description = "OCI tenancy OCID"; type = string }
-variable "user_ocid"          { description = "OCI user OCID"; type = string }
-variable "fingerprint"        { description = "API key fingerprint"; type = string }
-variable "private_key"        { description = "Private API key content"; type = string; sensitive = true }
-variable "region"             { description = "OCI region"; type = string }
-variable "compartment_ocid"   { description = "Target compartment OCID"; type = string }
-variable "node_image_ocid"    { description = "OKE node image OCID"; type = string }
-variable "docker_image"       { description = "Docker image URL"; type = string }
-variable "tenancy_namespace"  { description = "OCIR namespace"; type = string }
+variable "tenancy_ocid" {
+  description = "OCI tenancy OCID"
+  type        = string
+}
+
+variable "user_ocid" {
+  description = "OCI user OCID"
+  type        = string
+}
+
+variable "fingerprint" {
+  description = "API key fingerprint"
+  type        = string
+}
+
+variable "private_key" {
+  description = "Private API key content"
+  type        = string
+  sensitive   = true
+}
+
+variable "region" {
+  description = "OCI region"
+  type        = string
+}
+
+variable "compartment_ocid" {
+  description = "Target compartment OCID"
+  type        = string
+}
+
+variable "node_image_ocid" {
+  description = "OKE node image OCID"
+  type        = string
+}
+
+variable "docker_image" {
+  description = "Docker image URL"
+  type        = string
+}
+
+variable "tenancy_namespace" {
+  description = "OCIR namespace"
+  type        = string
+}
 
 # --- Terraform Backend & Providers ---
 terraform {
@@ -137,17 +173,17 @@ resource "local_file" "kubeconfig_file" {
 
 provider "kubernetes" {
   config_path = local_file.kubeconfig_file.filename
-  depends_on  = [local_file.kubeconfig_file]
 }
 
 provider "kubectl" {
   config_path = local_file.kubeconfig_file.filename
-  depends_on  = [local_file.kubeconfig_file]
 }
 
 # --- Kubernetes Resources ---
 resource "kubernetes_namespace" "app_ns" {
-  metadata { name = "ktor-app" }
+  metadata {
+    name = "ktor-app"
+  }
 }
 
 resource "kubernetes_deployment" "ktor_app_deployment" {
@@ -158,17 +194,23 @@ resource "kubernetes_deployment" "ktor_app_deployment" {
   spec {
     replicas = 1
     selector {
-      match_labels = { app = "ktor-app" }
+      match_labels = {
+        app = "ktor-app"
+      }
     }
     template {
       metadata {
-        labels = { app = "ktor-app" }
+        labels = {
+          app = "ktor-app"
+        }
       }
       spec {
         container {
           image = var.docker_image
           name  = "ktor-app-container"
-          port  { container_port = 8080 }
+          port {
+            container_port = 8080
+          }
         }
       }
     }
