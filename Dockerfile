@@ -1,17 +1,34 @@
-# Use an official OpenJDK runtime as a parent image
+# --- Stage 1: The Builder ---
+# This stage uses a full JDK to build the application.
+FROM gradle:8.5-jdk17 AS builder
+
+# Set the working directory
+WORKDIR /home/gradle/src
+
+# Copy the Gradle wrapper files and the build script
+COPY --chown=gradle:gradle build.gradle.kts gradlew settings.gradle.kts ./
+COPY --chown=gradle:gradle gradle ./gradle
+
+# Copy the application source code
+COPY --chown=gradle:gradle src ./src
+
+# Run the Gradle build to create the fat jar
+# This creates the JAR inside this temporary 'builder' container
+RUN ./gradlew shadowJar --no-daemon
+
+
+# --- Stage 2: The Final Image ---
+# This stage uses a slim JRE, which is much smaller than a full JDK.
 FROM openjdk:17-jdk-slim
 
-# Set the working directory in the container
+# Set the working directory
 WORKDIR /app
 
-# Copy the fat jar into the container at /app, renaming it to app.jar
-# The wildcard *-all.jar makes this command more robust.
-COPY build/libs/*-all.jar app.jar
+# Copy the fat jar from the 'builder' stage into the final image
+COPY --from=builder /home/gradle/src/build/libs/*-all.jar app.jar
 
-# Make port 8080 available to the world outside this container
+# Make port 8080 available
 EXPOSE 8080
 
-# Run the jar file using its new, consistent name
-CMD ["java", "-jar", "app.jar"]
-
- 
+# The command to run when the container starts
+ENTRYPOINT ["java", "-jar", "app.jar"]
