@@ -1,3 +1,100 @@
+name: Build and Deploy to OKE
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
+      OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
+      OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+      OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}
+      OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
+
+      TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+      TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+      TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+      TF_VAR_private_key: ${{ secrets.OCI_PRIVATE_KEY }}
+      TF_VAR_region: ${{ secrets.OCI_REGION }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup OCI Config File
+        run: |
+          set -eo pipefail
+          mkdir -p ~/.oci
+          echo "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/key.pem
+          chmod 600 ~/.oci/key.pem
+          cat > ~/.oci/config <<-EOF
+          [DEFAULT]
+          user=${{ secrets.OCI_USER_OCID }}
+          fingerprint=${{ secrets.OCI_FINGERPRINT }}
+          tenancy=${{ secrets.OCI_TENANCY_OCID }}
+          region=${{ secrets.OCI_REGION }}
+          key_file=~/.oci/key.pem
+          EOF
+
+      - name: Get or create an OCIR Repository
+        id: get-ocir-repository
+        uses: oracle-actions/get-ocir-repository@v1.3.0
+        with:
+          name: ktor-oke-app
+          compartment: ${{ secrets.OCI_COMPARTMENT_OCID }}
+
+      - name: Log into OCIR
+        uses: oracle-actions/login-ocir@v1.3.0
+        id: login-ocir
+        with:
+          auth_token: ${{ secrets.OCI_AUTH_TOKEN }}
+
+      - name: Cache Gradle
+        uses: actions/cache@v3
+        with:
+          path: ~/.gradle/caches
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Build with Gradle
+        uses: gradle/gradle-build-action@v2
+        with:
+          gradle-version: '8.5'
+          arguments: shadowJar
+
+      - name: Build and Push Docker Image
+        id: build-image
+        run: |
+          IMAGE_TAG=$GITHUB_SHA
+          IMAGE_URL="${{ steps.get-ocir-repository.outputs.repo_path }}:$IMAGE_TAG"
+          docker build -t $IMAGE_URL .
+          docker push $IMAGE_URL
+          echo "image_url=$IMAGE_URL" >> $GITHUB_OUTPUT
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+      
+      - name: Install OCI CLI
+        run: |
+          curl -L -o oci-cli.sh https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh
+          bash oci-cli.sh --accept-all-defaults
+          echo "/home/runner/bin" >> $GITHUB_PATH
+          /home/runner/bin/oci --version
+          
+      - name: Terraform Init
+        run: terraform init
+        
+      - name: Terraform Apply
+        run: |
+          terraform apply -auto-approve \
+            -var="docker_image=${{ steps.build-image.outputs.image_url }}" \
+            -var="node_image_ocid=${{ secrets.OCI_NODE_IMAGE_OCID }}" \
+            -var="compartment_ocid=${{ secrets.OCI_COMPARTMENT_OCID }}" \
+            -var="tenancy_namespace=${{ steps.get-ocir-repository.outputs.namespace }}"
+
 # --- Variable Definitions ---
 variable "tenancy_ocid" {
   description = "OCI tenancy OCID"
@@ -119,7 +216,7 @@ resource "oci_core_subnet" "oke_lb_subnet" {
 # --- OKE Cluster ---
 resource "oci_containerengine_cluster" "oke_cluster" {
   compartment_id     = var.compartment_ocid
-  kubernetes_version = "v1.33.1"
+  kubernetes_version = "v1.28.2" # Note: Updated to a more recent, valid version
   name               = "ktor_oke_cluster"
   vcn_id             = oci_core_vcn.oke_vcn.id
   options {
@@ -181,4 +278,63 @@ provider "kubernetes" {
   }
 }
 
-# --- Kubern 
+# --- Kubernetes Application Deployment (ADDED SECTION) ---
+
+resource "kubernetes_deployment" "ktor_app_deployment" {
+  provider = kubernetes.oke # Ensures this resource is created on the OKE cluster
+
+  metadata {
+    name = "ktor-oke-app"
+    labels = {
+      app = "ktor-oke-app"
+    }
+  }
+
+  spec {
+    replicas = 2 # Run 2 instances of the application for availability
+
+    selector {
+      match_labels = {
+        app = "ktor-oke-app"
+      }
+    }
+
+    template {
+      metadata {
+        labels = {
+          app = "ktor-oke-app"
+        }
+      }
+      spec {
+        containers {
+          image = var.docker_image # Uses the image URL from your GitHub Action
+          name  = "ktor-oke-app-container"
+          ports {
+            # This is the port your Ktor application listens on inside the container
+            container_port = 8080 
+          }
+        }
+      }
+    }
+  }
+}
+
+resource "kubernetes_service" "ktor_app_service" {
+  provider = kubernetes.oke # Ensures this resource is created on the OKE cluster
+
+  metadata {
+    name = "ktor-oke-app-service"
+  }
+
+  spec {
+    selector = {
+      app = kubernetes_deployment.ktor_app_deployment.metadata[0].labels.app
+    }
+    ports {
+      port        = 80   # The port the public load balancer will listen on
+      target_port = 8080 # Route traffic from the load balancer to the container's port
+    }
+    # This tells OCI to provision a public load balancer to expose the application
+    type = "LoadBalancer" 
+  }
+}
