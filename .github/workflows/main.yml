@@ -8,18 +8,18 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     env:
-      # OCI CLI credentials
+      # OCI CLI credentials (used by Terraform backend)
       OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
       OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
       OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-      OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}
+      OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}  # raw PEM format
       OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
 
-      # Terraform variables
+      # Terraform provider variables
       TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
       TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
       TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
-      TF_VAR_private_key_base64: ${{ secrets.OCI_PRIVATE_KEY_BASE64 }}
+      TF_VAR_private_key_base64: ${{ secrets.OCI_PRIVATE_KEY_BASE64 }}  # base64-encoded PEM
       TF_VAR_region: ${{ secrets.OCI_REGION }}
 
     steps:
@@ -57,6 +57,12 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
 
+      - name: Decode and verify private key (optional debug)
+        run: |
+          echo "$TF_VAR_private_key_base64" | base64 -d > decoded_key.pem
+          head -n 5 decoded_key.pem
+          openssl rsa -in decoded_key.pem -check || echo "Key format invalid"
+
       - name: Terraform Init
         run: terraform init
 
@@ -67,3 +73,4 @@ jobs:
             -var="node_image_ocid=${{ secrets.OCI_NODE_IMAGE_OCID }}" \
             -var="compartment_ocid=${{ secrets.OCI_COMPARTMENT_OCID }}" \
             -var="tenancy_namespace=${{ steps.get-ocir-repository.outputs.namespace }}"
+
