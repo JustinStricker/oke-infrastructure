@@ -162,20 +162,18 @@ data "oci_containerengine_cluster_kube_config" "oke_kubeconfig" {
   cluster_id = oci_containerengine_cluster.oke_cluster.id
 }
 
-# --- NEW LOCALS BLOCK ---
-# This block parses the YAML content of the kubeconfig to extract the
-# cluster CA certificate, which is not exposed as a top-level attribute.
 locals {
   kubeconfig_yaml = yamldecode(data.oci_containerengine_cluster_kube_config.oke_kubeconfig.content)
   cluster_ca_certificate_data = local.kubeconfig_yaml.clusters[0].cluster["certificate-authority-data"]
 }
 
-# --- CORRECTED KUBERNETES PROVIDER ---
 provider "kubernetes" {
   alias = "oke"
 
-  host = data.oci_containerengine_cluster_kube_config.oke_kubeconfig.endpoint
-  # The CA certificate is now sourced from the parsed local variable.
+  # FIXED: Source the host/endpoint directly from the cluster resource.
+  # This creates a more reliable dependency than using the data source.
+  host = oci_containerengine_cluster.oke_cluster.endpoints.kubernetes
+  
   cluster_ca_certificate = base64decode(local.cluster_ca_certificate_data)
   
   exec {
@@ -261,4 +259,3 @@ output "load_balancer_ip" {
   description = "Public IP address of the Ktor application's load balancer."
   value       = data.kubernetes_service.ktor_service.status[0].load_balancer[0].ingress[0].ip
 }
- 
