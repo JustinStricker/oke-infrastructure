@@ -144,23 +144,26 @@ resource "oci_core_subnet" "oke_lb_subnet" {
   dhcp_options_id   = oci_core_vcn.oke_vcn.default_dhcp_options_id
 }
 
-# --- IAM Policy for OKE Worker Nodes to access OCIR (NEWLY ADDED SECTION) ---
+# --- IAM Policy for OKE Worker Nodes to access OCIR (REVISED AND CORRECTED SECTION) ---
 
 # This Dynamic Group automatically includes all OKE worker nodes in the specified compartment.
 resource "oci_identity_dynamic_group" "oke_nodes_dynamic_group" {
   provider       = oci
-  compartment_id = var.tenancy_ocid # Dynamic groups must be created in the root compartment (tenancy)
+  # IMPORTANT: Dynamic groups must be created in the root compartment (tenancy) to work correctly.
+  compartment_id = var.tenancy_ocid
   description    = "Dynamic group for OKE worker nodes to pull images from OCIR"
   name           = "oke-nodes-dynamic-group"
 
-  matching_rule = "ALL {instance.compartment.id = '${var.compartment_ocid}'}"
+  # More specific matching rule to only target compute instances.
+  matching_rule = "ALL {instance.compartment.id = '${var.compartment_ocid}', resource.type = 'instance'}"
 }
 
 # This policy grants the dynamic group the necessary permissions to read from OCIR.
 resource "oci_identity_policy" "oke_nodes_ocir_policy" {
   provider       = oci
-  compartment_id = var.tenancy_ocid # Policies must also be created in the root compartment
-  description    = "Allow OKE nodes to read container images"
+  # IMPORTANT: Policies that apply to dynamic groups must also be created in the root compartment.
+  compartment_id = var.tenancy_ocid
+  description    = "Allow OKE nodes to read container images from OCIR"
   name           = "oke-nodes-ocir-policy"
 
   statements = [
@@ -171,6 +174,7 @@ resource "oci_identity_policy" "oke_nodes_ocir_policy" {
 # --- OKE Cluster ---
 resource "oci_containerengine_cluster" "oke_cluster" {
   compartment_id     = var.compartment_ocid
+  # --- CHANGE: Kubernetes version reverted to your original value as requested.
   kubernetes_version = "v1.33.1"
   name               = "ktor_oke_cluster"
   vcn_id             = oci_core_vcn.oke_vcn.id
@@ -208,6 +212,12 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
     }
     size = 1 # Number of worker nodes
   }
+
+  # Added an explicit dependency to prevent race conditions.
+  # This ensures the IAM policy is created and active before the nodes are provisioned.
+  depends_on = [
+    oci_identity_policy.oke_nodes_ocir_policy
+  ]
 }
 
 # --- Kubeconfig Bootstrap ---
