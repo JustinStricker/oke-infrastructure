@@ -1,3 +1,32 @@
+# --- Terraform Backend & Providers ---
+terraform {
+  # Stores the state file remotely in OCI Object Storage for safety and collaboration
+  backend "oci" {
+    bucket    = "ktor-oke-app-tfstate"
+    key       = "ktor-oke/terraform.tfstate"
+    region    = "us-ashburn-1"
+    namespace = "idrolupgk4or"
+  }
+
+  required_providers {
+    oci        = { source = "oracle/oci", version = ">= 5.0" }
+    kubernetes = { source = "hashicorp/kubernetes", version = ">= 2.20" }
+    local      = { source = "hashicorp/local", version = "2.5.1" }
+  }
+}
+
+# Provider for managing Oracle Cloud Infrastructure resources
+provider "oci" {
+  tenancy_ocid = var.tenancy_ocid
+  user_ocid    = var.user_ocid
+  fingerprint  = var.fingerprint
+  private_key  = var.private_key
+  region       = var.region
+}
+
+# Provider for managing Kubernetes resources within the created OKE cluster
+# This is defined later, after the OKE cluster is created and its details are known.
+
 # --- Variable Definitions ---
 variable "tenancy_ocid" {
   description = "OCI tenancy OCID"
@@ -26,48 +55,23 @@ variable "region" {
 }
 
 variable "compartment_ocid" {
-  description = "Target compartment OCID"
+  description = "Target compartment OCID where resources will be created"
   type        = string
 }
 
 variable "node_image_ocid" {
-  description = "OKE node image OCID"
+  description = "The OCID of the image to use for the OKE worker nodes"
   type        = string
 }
 
 variable "docker_image" {
-  description = "Docker image URL"
+  description = "The full URL of the Docker image built by the CI/CD pipeline"
   type        = string
 }
 
 variable "tenancy_namespace" {
-  description = "OCIR namespace"
+  description = "The Object Storage namespace, used for OCIR"
   type        = string
-}
-
-# --- Terraform Backend & Providers ---
-terraform {
-  backend "oci" {
-    bucket    = "ktor-oke-app-tfstate"
-    key       = "ktor-oke/terraform.tfstate"
-    region    = "us-ashburn-1"
-    namespace = "idrolupgk4or"
-  }
-
-  required_providers {
-    oci        = { source = "oracle/oci", version = ">= 5.0" }
-    kubectl    = { source = "gavinbunney/kubectl", version = "1.14.0" }
-    kubernetes = { source = "hashicorp/kubernetes", version = ">= 2.20" }
-    local      = { source = "hashicorp/local", version = "2.5.1" }
-  }
-}
-
-provider "oci" {
-  tenancy_ocid = var.tenancy_ocid
-  user_ocid    = var.user_ocid
-  fingerprint  = var.fingerprint
-  private_key  = var.private_key
-  region       = var.region
 }
 
 # --- Networking ---
@@ -116,6 +120,25 @@ resource "oci_core_subnet" "oke_lb_subnet" {
   dhcp_options_id   = oci_core_vcn.oke_vcn.default_dhcp_options_id
 }
 
+# --- [MISSING SECTION 1] IAM Policy for OKE Worker Nodes to access OCIR ---
+resource "oci_identity_dynamic_group" "oke_nodes_dynamic_group" {
+  provider       = oci
+  compartment_id = var.tenancy_ocid
+  description    = "Dynamic group for OKE worker nodes to pull images from OCIR"
+  name           = "oke-nodes-dynamic-group"
+  matching_rule  = "ALL {instance.compartment.id = '${var.compartment_ocid}', resource.type = 'instance'}"
+}
+
+resource "oci_identity_policy" "oke_nodes_ocir_policy" {
+  provider       = oci
+  compartment_id = var.tenancy_ocid
+  description    = "Allow OKE nodes to read container images from OCIR"
+  name           = "oke-nodes-ocir-policy"
+  statements     = [
+    "Allow dynamic-group ${oci_identity_dynamic_group.oke_nodes_dynamic_group.name} to read repos in compartment id ${var.compartment_ocid}"
+  ]
+}
+
 # --- OKE Cluster ---
 resource "oci_containerengine_cluster" "oke_cluster" {
   compartment_id     = var.compartment_ocid
@@ -123,9 +146,7 @@ resource "oci_containerengine_cluster" "oke_cluster" {
   name               = "ktor_oke_cluster"
   vcn_id             = oci_core_vcn.oke_vcn.id
   options {
-    add_ons {
-      is_kubernetes_dashboard_enabled = false
-    }
+    add_ons { is_kubernetes_dashboard_enabled = false }
     kubernetes_network_config {
       pods_cidr     = "10.244.0.0/16"
       services_cidr = "10.96.0.0/16"
@@ -155,6 +176,11 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
     }
     size = 1
   }
+  
+  # --- [MISSING SECTION 2] This dependency is critical to prevent race conditions ---
+  depends_on = [
+    oci_identity_policy.oke_nodes_ocir_policy
+  ]
 }
 
 # --- Kubeconfig Bootstrap ---
@@ -169,9 +195,7 @@ locals {
 
 provider "kubernetes" {
   alias = "oke"
-
-  host = oci_containerengine_cluster.oke_cluster.endpoints[0].kubernetes
-
+  host  = oci_containerengine_cluster.oke_cluster.endpoints[0].kubernetes
   cluster_ca_certificate = base64decode(local.cluster_ca_certificate_data)
 
   exec {
@@ -181,4 +205,48 @@ provider "kubernetes" {
   }
 }
 
-# --- Kubern 
+# --- [MISSING SECTION 3] Kubernetes Application Deployment ---
+resource "kubernetes_deployment" "ktor_app_deployment" {
+  provider = kubernetes.oke
+  metadata {
+    name   = "ktor-oke-app"
+    labels = { app = "ktor-oke-app" }
+  }
+  spec {
+    replicas = 2
+    selector {
+      match_labels = { app = "ktor-oke-app" }
+    }
+    template {
+      metadata {
+        labels = { app = "ktor-oke-app" }
+      }
+      spec {
+        container {
+          image = var.docker_image
+          name  = "ktor-oke-app-container"
+          port {
+            container_port = 8080
+          }
+        }
+      }
+    }
+  }
+}
+
+resource "kubernetes_service" "ktor_app_service" {
+  provider = kubernetes.oke
+  metadata {
+    name = "ktor-oke-app-service"
+  }
+  spec {
+    selector = {
+      app = kubernetes_deployment.ktor_app_deployment.metadata[0].labels.app
+    }
+    port {
+      port        = 80
+      target_port = 8080
+    }
+    type = "LoadBalancer"
+  }
+}
