@@ -51,7 +51,6 @@ terraform {
     bucket    = "ktor-oke-app-tfstate"
     key       = "ktor-oke/terraform.tfstate"
     region    = "us-ashburn-1"
-    # FIXED: Added your specific Object Storage namespace to prevent the interactive prompt.
     namespace = "idrolupgk4or"
   }
 
@@ -63,6 +62,7 @@ terraform {
   }
 }
 
+# This provider block is configured by the TF_VARs set in the main.yml workflow.
 provider "oci" {
   tenancy_ocid = var.tenancy_ocid
   user_ocid    = var.user_ocid
@@ -120,7 +120,8 @@ resource "oci_core_subnet" "oke_lb_subnet" {
 # --- OKE Cluster ---
 resource "oci_containerengine_cluster" "oke_cluster" {
   compartment_id     = var.compartment_ocid
-  kubernetes_version = "v1.29.1" # Please ensure this is a supported version in your region
+  # NOTE: Please verify this is a supported Kubernetes version in your region.
+  kubernetes_version = "v1.29.1"
   name               = "ktor_oke_cluster"
   vcn_id             = oci_core_vcn.oke_vcn.id
   options {
@@ -163,6 +164,7 @@ data "oci_containerengine_cluster_kube_config" "oke_kubeconfig" {
   cluster_id = oci_containerengine_cluster.oke_cluster.id
 }
 
+# This provider is configured dynamically after the OKE cluster is created.
 provider "kubernetes" {
   alias = "oke"
 
