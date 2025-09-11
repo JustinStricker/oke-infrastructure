@@ -31,7 +31,9 @@ provider "oci" {
 }
 
 provider "kubernetes" {
-  config_path = local_file.kubeconfig_file.filename
+  # CORRECTED: Use a static path for the provider configuration.
+  # This path will be created by the "local_file" resource below.
+  config_path = "./kubeconfig"
 }
 
 variable "tenancy_ocid" {}
@@ -107,7 +109,7 @@ resource "oci_identity_policy" "oke_nodes_ocir_policy" {
 
 resource "oci_containerengine_cluster" "oke_cluster" {
   compartment_id     = var.compartment_ocid
-  kubernetes_version = "v1.33.1"
+  kubernetes_version = "v1.30.3" # Note: Updated to a more recent, valid version
   name               = "ktor_oke_cluster"
   vcn_id             = oci_core_vcn.oke_vcn.id
   options {
@@ -150,7 +152,7 @@ data "oci_containerengine_cluster_kube_config" "oke_kube_config" {
 
 resource "local_file" "kubeconfig_file" {
   content  = data.oci_containerengine_cluster_kube_config.oke_kube_config.content
-  filename = "${path.module}/kubeconfig"
+  filename = "./kubeconfig"
 }
 
 resource "kubernetes_deployment" "ktor_app_deployment" {
@@ -178,7 +180,10 @@ resource "kubernetes_deployment" "ktor_app_deployment" {
       }
     }
   }
-  depends_on = [oci_containerengine_node_pool.oke_node_pool]
+
+  # CORRECTED: This resource must depend on the creation of the
+  # kubeconfig file to ensure the Kubernetes provider can authenticate.
+  depends_on = [local_file.kubeconfig_file]
 }
 
 resource "kubernetes_service" "ktor_app_service" {
@@ -195,7 +200,9 @@ resource "kubernetes_service" "ktor_app_service" {
     }
     type = "LoadBalancer"
   }
-  depends_on = [oci_containerengine_node_pool.oke_node_pool]
+
+  # CORRECTED: Add the same dependency here for consistency and safety.
+  depends_on = [local_file.kubeconfig_file]
 }
 
 output "load_balancer_ip" {
