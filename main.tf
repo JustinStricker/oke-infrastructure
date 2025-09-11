@@ -1,4 +1,5 @@
 # --- Variable Definitions ---
+# ... (no changes here) ...
 variable "tenancy_ocid" {
   description = "OCI tenancy OCID"
   type        = string
@@ -46,6 +47,7 @@ variable "tenancy_namespace" {
 }
 
 # --- Terraform Backend & Providers ---
+# ... (no changes here) ...
 terraform {
   backend "oci" {
     bucket    = "ktor-oke-app-tfstate"
@@ -71,6 +73,7 @@ provider "oci" {
 }
 
 # --- Networking ---
+# ... (no changes here) ...
 data "oci_identity_availability_domains" "ads" {
   compartment_id = var.tenancy_ocid
 }
@@ -117,6 +120,7 @@ resource "oci_core_subnet" "oke_lb_subnet" {
 }
 
 # --- OKE Cluster ---
+# ... (no changes here) ...
 resource "oci_containerengine_cluster" "oke_cluster" {
   compartment_id     = var.compartment_ocid
   kubernetes_version = "v1.33.1"
@@ -158,7 +162,14 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
 }
 
 # --- Kubeconfig Bootstrap ---
+# ... (This data source is still needed for the CA certificate) ...
 data "oci_containerengine_cluster_kube_config" "oke_kubeconfig" {
+  cluster_id = oci_containerengine_cluster.oke_cluster.id
+}
+
+# --- NEW DATA SOURCE FOR TOKEN ---
+# This data source reads the cluster and generates a temporary auth token.
+data "oci_containerengine_cluster_auth_token" "oke_auth_token" {
   cluster_id = oci_containerengine_cluster.oke_cluster.id
 }
 
@@ -167,21 +178,19 @@ locals {
   cluster_ca_certificate_data = local.kubeconfig_yaml.clusters[0].cluster["certificate-authority-data"]
 }
 
+# --- REVISED KUBERNETES PROVIDER ---
+# This no longer uses 'exec' and instead uses the token from our new data source.
 provider "kubernetes" {
   alias = "oke"
   
-  host = oci_containerengine_cluster.oke_cluster.endpoints[0].kubernetes
+  host  = oci_containerengine_cluster.oke_cluster.endpoints[0].kubernetes
+  token = data.oci_containerengine_cluster_auth_token.oke_auth_token.token
   
   cluster_ca_certificate = base64decode(local.cluster_ca_certificate_data)
-  
-  exec {
-    api_version = "client.authentication.k8s.io/v1beta1"
-    command     = "oci"
-    args        = ["ce", "cluster", "generate-token", "--cluster-id", oci_containerengine_cluster.oke_cluster.id]
-  }
 }
 
 # --- Kubernetes Resources ---
+# ... (no changes here) ...
 resource "kubernetes_namespace" "app_ns" {
   provider = kubernetes.oke
 
