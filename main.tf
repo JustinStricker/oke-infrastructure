@@ -1,15 +1,8 @@
 terraform {
-  backend "oci" {
-    bucket    = "ktor-oke-app-tfstate"
-    key       = "ktor-oke/terraform.tfstate"
-    region    = "us-ashburn-1"
-    namespace = "idrolupgk4or"
-  }
-
   required_providers {
     oci = {
       source  = "oracle/oci"
-      version = "5.55.0"
+      version = "7.17.0"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
@@ -19,6 +12,13 @@ terraform {
       source  = "hashicorp/local"
       version = "2.5.1"
     }
+  }
+
+  backend "oci" {
+    bucket    = "ktor-oke-app-tfstate"
+    key       = "ktor-oke/terraform.tfstate"
+    region    = "us-ashburn-1"
+    namespace = "idrolupgk4or"
   }
 }
 
