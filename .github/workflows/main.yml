@@ -8,17 +8,13 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     env:
+      # These credentials are used by the Oracle actions and are automatically
+      # picked up by the Terraform OCI provider.
       OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
       OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
       OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
       OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}
       OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
-
-      TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
-      TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
-      TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
-      TF_VAR_private_key: ${{ secrets.OCI_PRIVATE_KEY }}
-      TF_VAR_region: ${{ secrets.OCI_REGION }}
 
     steps:
       - name: Checkout Repository
@@ -77,10 +73,8 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
       
-      # --- FIXED URL ---
       - name: Install OCI CLI
         run: |
-          # The URL has been corrected to remove the ".exports" typo
           curl -L -o oci-cli.sh https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh
           bash oci-cli.sh --accept-all-defaults
           echo "/home/runner/bin" >> $GITHUB_PATH
@@ -91,6 +85,8 @@ jobs:
         
       - name: Terraform Apply
         run: |
+          # IMPROVEMENT: The 'auth_token' variable has been removed.
+          # Terraform now uses the more secure IAM policy to grant OCIR access.
           terraform apply -auto-approve \
             -var="docker_image=${{ steps.build-image.outputs.image_url }}" \
             -var="node_image_ocid=${{ secrets.OCI_NODE_IMAGE_OCID }}" \
