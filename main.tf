@@ -1,27 +1,26 @@
-# 1. DEFINE PROVIDERS AND REMOTE STATE BACKEND
-# This tells Terraform what tools it needs and where to store the project's state securely.
 terraform {
   required_providers {
     oci = {
       source  = "oracle/oci"
-      version = "~> 7.0"
+      # Using a recent, stable version
+      version = "7.17.0"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = "~> 2.30"
+      # Using a recent, stable version
+      version = "2.38.0"
     }
+    # The "local" provider is no longer needed with this method.
   }
 
   backend "oci" {
-    bucket    = "your-tfstate-bucket-name" # IMPORTANT: Create this OCI bucket first.
-    key       = "ktor-oke-app/terraform.tfstate"
-    region    = "us-ashburn-1" # Or your desired region
-    namespace = "your_tenancy_namespace"
+    bucket    = "ktor-oke-app-tfstate"
+    key       = "ktor-oke/terraform.tfstate"
+    region    = "us-ashburn-1"
+    namespace = "idrolupgk4or"
   }
 }
 
-# 2. CONFIGURE OCI AUTHENTICATION
-# This uses variables to securely authenticate with your OCI account.
 provider "oci" {
   tenancy_ocid     = var.tenancy_ocid
   user_ocid        = var.user_ocid
@@ -30,17 +29,15 @@ provider "oci" {
   region           = var.region
 }
 
-# 3. CONFIGURE KUBERNETES PROVIDER (THE "OPTION B" METHOD)
-# Instead of using a file, we configure the provider directly with data from the OKE cluster.
-# Terraform automatically waits for the cluster to be created before configuring this.
+# The clean, recommended way to configure the Kubernetes provider.
+# It authenticates directly using data from the OKE cluster resource.
 provider "kubernetes" {
   host                   = oci_containerengine_cluster.oke_cluster.endpoints[0].kubernetes
   cluster_ca_certificate = base64decode(oci_containerengine_cluster.oke_cluster.endpoints[0].ca_certificate)
   token                  = data.oci_containerengine_cluster_auth_token.oke_auth_token.token
 }
 
-# 4. DEFINE INPUT VARIABLES
-# These are the parameters our configuration needs from the outside world (like GitHub Actions).
+# Your exact original variables
 variable "tenancy_ocid" {}
 variable "user_ocid" {}
 variable "fingerprint" {}
@@ -49,10 +46,18 @@ variable "region" {}
 variable "compartment_ocid" {}
 variable "node_image_ocid" {}
 variable "docker_image" {}
-variable "tenancy_namespace" {} # Used by the backend block
+variable "tenancy_namespace" {}
 
-# 5. DEFINE THE NETWORKING RESOURCES
-# A Kubernetes cluster needs a Virtual Cloud Network (VCN) and subnets.
+data "oci_identity_availability_domains" "ads" {
+  compartment_id = var.tenancy_ocid
+}
+
+# This new data source generates the auth token in memory for the provider.
+data "oci_containerengine_cluster_auth_token" "oke_auth_token" {
+  cluster_id = oci_containerengine_cluster.oke_cluster.id
+}
+
+# Your exact original OCI resources
 resource "oci_core_vcn" "oke_vcn" {
   compartment_id = var.compartment_ocid
   display_name   = "oke_vcn"
@@ -67,6 +72,7 @@ resource "oci_core_internet_gateway" "oke_ig" {
 
 resource "oci_core_default_route_table" "oke_route_table" {
   manage_default_resource_id = oci_core_vcn.oke_vcn.default_route_table_id
+  display_name               = "oke_route_table"
   route_rules {
     destination       = "0.0.0.0/0"
     network_entity_id = oci_core_internet_gateway.oke_ig.id
@@ -74,30 +80,52 @@ resource "oci_core_default_route_table" "oke_route_table" {
 }
 
 resource "oci_core_subnet" "oke_nodes_subnet" {
-  compartment_id = var.compartment_ocid
-  vcn_id         = oci_core_vcn.oke_vcn.id
-  display_name   = "oke_nodes_subnet"
-  cidr_block     = "10.0.1.0/24"
+  compartment_id    = var.compartment_ocid
+  vcn_id            = oci_core_vcn.oke_vcn.id
+  display_name      = "oke_nodes_subnet"
+  cidr_block        = "10.0.1.0/24"
+  route_table_id    = oci_core_vcn.oke_vcn.default_route_table_id
+  security_list_ids = [oci_core_vcn.oke_vcn.default_security_list_id]
+  dhcp_options_id   = oci_core_vcn.oke_vcn.default_dhcp_options_id
 }
 
 resource "oci_core_subnet" "oke_lb_subnet" {
-  compartment_id = var.compartment_ocid
-  vcn_id         = oci_core_vcn.oke_vcn.id
-  display_name   = "oke_lb_subnet"
-  cidr_block     = "10.0.2.0/24"
+  compartment_id    = var.compartment_ocid
+  vcn_id            = oci_core_vcn.oke_vcn.id
+  display_name      = "oke_lb_subnet"
+  cidr_block        = "10.0.2.0/24"
+  route_table_id    = oci_core_vcn.oke_vcn.default_route_table_id
+  security_list_ids = [oci_core_vcn.oke_vcn.default_security_list_id]
+  dhcp_options_id   = oci_core_vcn.oke_vcn.default_dhcp_options_id
 }
 
-# 6. DEFINE THE OKE CLUSTER AND NODE POOL
-data "oci_identity_availability_domains" "ads" {
+resource "oci_identity_dynamic_group" "oke_nodes_dynamic_group" {
   compartment_id = var.tenancy_ocid
+  description    = "Dynamic group for OKE worker nodes"
+  name           = "oke-nodes-dynamic-group"
+  matching_rule  = "ALL {instance.compartment.id = '${var.compartment_ocid}', resource.type = 'instance'}"
+}
+
+resource "oci_identity_policy" "oke_nodes_ocir_policy" {
+  compartment_id = var.tenancy_ocid
+  description    = "Allow OKE nodes to read container images from OCIR"
+  name           = "oke-nodes-ocir-policy"
+  statements     = [
+    "Allow dynamic-group ${oci_identity_dynamic_group.oke_nodes_dynamic_group.name} to read repos in tenancy"
+  ]
 }
 
 resource "oci_containerengine_cluster" "oke_cluster" {
   compartment_id     = var.compartment_ocid
-  kubernetes_version = "v1.33.1" # Choose a currently supported version
+  kubernetes_version = "v1.33.1"
   name               = "ktor_oke_cluster"
   vcn_id             = oci_core_vcn.oke_vcn.id
   options {
+    add_ons { is_kubernetes_dashboard_enabled = false }
+    kubernetes_network_config {
+      pods_cidr     = "10.244.0.0/16"
+      services_cidr = "10.96.0.0/16"
+    }
     service_lb_subnet_ids = [oci_core_subnet.oke_lb_subnet.id]
   }
 }
@@ -106,26 +134,27 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
   cluster_id         = oci_containerengine_cluster.oke_cluster.id
   compartment_id     = var.compartment_ocid
   kubernetes_version = oci_containerengine_cluster.oke_cluster.kubernetes_version
-  name               = "default-pool"
+  name               = "amd-pool-free"
   node_shape         = "VM.Standard.A1.Flex"
-  node_shape_config { ocpus = 1; memory_in_gbs = 6 }
-  node_source_details { image_id = var.node_image_ocid; source_type = "image" }
+  node_shape_config {
+    ocpus         = 1
+    memory_in_gbs = 6
+  }
+  node_source_details {
+    image_id    = var.node_image_ocid
+    source_type = "image"
+  }
   node_config_details {
-    size = 1
     placement_configs {
       availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
       subnet_id           = oci_core_subnet.oke_nodes_subnet.id
     }
+    size = 1
   }
+  depends_on = [oci_identity_policy.oke_nodes_ocir_policy]
 }
 
-# 7. GENERATE THE KUBERNETES AUTH TOKEN IN MEMORY
-data "oci_containerengine_cluster_auth_token" "oke_auth_token" {
-  cluster_id = oci_containerengine_cluster.oke_cluster.id
-}
-
-# 8. DEFINE THE KUBERNETES APPLICATION RESOURCES
-# This will create the Deployment (to run the container) and Service (to expose it).
+# Your exact original Kubernetes resources, but with "depends_on" removed as it's no longer needed.
 resource "kubernetes_deployment" "ktor_app_deployment" {
   metadata {
     name   = "ktor-oke-app"
@@ -133,14 +162,20 @@ resource "kubernetes_deployment" "ktor_app_deployment" {
   }
   spec {
     replicas = 2
-    selector { match_labels = { app = "ktor-oke-app" } }
+    selector {
+      match_labels = { app = "ktor-oke-app" }
+    }
     template {
-      metadata { labels = { app = "ktor-oke-app" } }
+      metadata {
+        labels = { app = "ktor-oke-app" }
+      }
       spec {
         container {
           image = var.docker_image
           name  = "ktor-oke-app-container"
-          port { container_port = 8080 }
+          port {
+            container_port = 8080
+          }
         }
       }
     }
@@ -152,15 +187,22 @@ resource "kubernetes_service" "ktor_app_service" {
     name = "ktor-oke-app-service"
   }
   spec {
-    selector = { app = "ktor-oke-app" }
-    port { port = 80; target_port = 8080 }
-    type     = "LoadBalancer" # This creates a public IP and load balancer in OCI.
+    selector = {
+      app = kubernetes_deployment.ktor_app_deployment.metadata[0].labels.app
+    }
+    port {
+      port        = 80
+      target_port = 8080
+    }
+    type = "LoadBalancer"
   }
 }
 
-# 9. DEFINE AN OUTPUT
-# This makes it easy to find the public IP address after the deployment is complete.
+# Your exact original output block
 output "load_balancer_ip" {
   description = "Public IP address of the Ktor application's load balancer."
-  value       = try(kubernetes_service.ktor_app_service.status[0].load_balancer[0].ingress[0].ip, "creating...")
+  value = try(
+    kubernetes_service.ktor_app_service.status[0].load_balancer[0].ingress[0].ip,
+    "creating..."
+  )
 }
