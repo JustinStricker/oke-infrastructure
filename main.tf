@@ -24,10 +24,9 @@ provider "oci" {
   region       = var.region
 }
 
-# Provider for managing Kubernetes resources within the created OKE cluster
-# This is defined later, after the OKE cluster is created and its details are known.
-
 # --- Variable Definitions ---
+# These variables receive their values from the GitHub Actions workflow environment
+
 variable "tenancy_ocid" {
   description = "OCI tenancy OCID"
   type        = string
@@ -120,7 +119,7 @@ resource "oci_core_subnet" "oke_lb_subnet" {
   dhcp_options_id   = oci_core_vcn.oke_vcn.default_dhcp_options_id
 }
 
-# --- [MISSING SECTION 1] IAM Policy for OKE Worker Nodes to access OCIR ---
+# --- IAM Policy for OKE Worker Nodes to access OCIR ---
 resource "oci_identity_dynamic_group" "oke_nodes_dynamic_group" {
   provider       = oci
   compartment_id = var.tenancy_ocid
@@ -176,8 +175,8 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
     }
     size = 1
   }
-  
-  # --- [MISSING SECTION 2] This dependency is critical to prevent race conditions ---
+
+  # This dependency ensures the OCIR permissions are active before nodes are created.
   depends_on = [
     oci_identity_policy.oke_nodes_ocir_policy
   ]
@@ -193,6 +192,7 @@ locals {
   cluster_ca_certificate_data = local.kubeconfig_yaml.clusters[0].cluster["certificate-authority-data"]
 }
 
+# Provider for managing Kubernetes resources within the created OKE cluster
 provider "kubernetes" {
   alias = "oke"
   host  = oci_containerengine_cluster.oke_cluster.endpoints[0].kubernetes
@@ -205,7 +205,7 @@ provider "kubernetes" {
   }
 }
 
-# --- [MISSING SECTION 3] Kubernetes Application Deployment ---
+# --- Kubernetes Application Deployment ---
 resource "kubernetes_deployment" "ktor_app_deployment" {
   provider = kubernetes.oke
   metadata {
@@ -232,6 +232,12 @@ resource "kubernetes_deployment" "ktor_app_deployment" {
       }
     }
   }
+
+  # --- CRITICAL FIX: This prevents the race condition where Terraform tries to
+  # create the deployment before the cluster's nodes are ready.
+  depends_on = [
+    oci_containerengine_node_pool.oke_node_pool
+  ]
 }
 
 resource "kubernetes_service" "ktor_app_service" {
@@ -249,4 +255,10 @@ resource "kubernetes_service" "ktor_app_service" {
     }
     type = "LoadBalancer"
   }
+
+  # --- CRITICAL FIX: This also ensures the service is not created before the
+  # nodes exist, which is a requirement for services of type LoadBalancer.
+  depends_on = [
+    oci_containerengine_node_pool.oke_node_pool
+  ]
 }
