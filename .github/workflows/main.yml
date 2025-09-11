@@ -69,19 +69,9 @@ jobs:
       - name: Terraform Init
         run: terraform init
 
-      # CORRECTED STEP 1: Apply only the infrastructure and kubeconfig file.
-      # The -target flag tells Terraform to create the specified resource and all its dependencies.
-      # This ensures the kubeconfig file exists on disk before the next step.
-      - name: Terraform Apply (Infrastructure & Kubeconfig)
-        run: |
-          terraform apply -auto-approve -target=local_file.kubeconfig_file \
-            -var="docker_image=${{ steps.build-image.outputs.image_url }}" \
-            -var="tenancy_namespace=${{ steps.get-ocir-repository.outputs.namespace }}"
-
-      # CORRECTED STEP 2: Apply the remaining Kubernetes resources.
-      # Now that the kubeconfig file exists, the Kubernetes provider can initialize
-      # successfully and create the deployment and service.
-      - name: Terraform Apply (Kubernetes Resources)
+      # SIMPLIFIED: Reverted to a single, clean apply step.
+      # The OCI CLI installation and two-step apply are no longer needed.
+      - name: Terraform Apply
         run: |
           terraform apply -auto-approve \
             -var="docker_image=${{ steps.build-image.outputs.image_url }}" \
