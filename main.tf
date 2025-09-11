@@ -9,9 +9,10 @@ terraform {
   }
 
   required_providers {
-    oci        = { source = "oracle/oci", version = ">= 5.0" }
-    kubernetes = { source = "hashicorp/kubernetes", version = ">= 2.20" }
-    local      = { source = "hashicorp/local", version = "2.5.1" }
+    # IMPROVEMENT: Pinning to the minor version (~>) prevents breaking changes 
+    # from major version updates while still allowing patches.
+    oci        = { source = "oracle/oci", version = "~> 5.0" }
+    kubernetes = { source = "hashicorp/kubernetes", version = "~> 2.20" }
   }
 }
 
@@ -119,28 +120,32 @@ resource "oci_core_subnet" "oke_lb_subnet" {
   dhcp_options_id   = oci_core_vcn.oke_vcn.default_dhcp_options_id
 }
 
-# --- IAM Policy for OKE Worker Nodes to access OCIR ---
+# --- IAM Policy for OKE Worker Nodes to access OCIR (BEST PRACTICE) ---
 resource "oci_identity_dynamic_group" "oke_nodes_dynamic_group" {
   provider       = oci
+  # IAM resources must be created in the root compartment (tenancy)
   compartment_id = var.tenancy_ocid
   description    = "Dynamic group for OKE worker nodes to pull images from OCIR"
   name           = "oke-nodes-dynamic-group"
-  matching_rule  = "ALL {instance.compartment.id = '${var.compartment_ocid}', resource.type = 'instance'}"
+  # This rule automatically includes all VMs in the target compartment
+  matching_rule  = "ALL {instance.compartment.id = '${var.compartment_ocid}'}"
 }
 
 resource "oci_identity_policy" "oke_nodes_ocir_policy" {
   provider       = oci
+  # IAM resources must be created in the root compartment (tenancy)
   compartment_id = var.tenancy_ocid
   description    = "Allow OKE nodes to read container images from OCIR"
   name           = "oke-nodes-ocir-policy"
   statements     = [
-    "Allow dynamic-group ${oci_identity_dynamic_group.oke_nodes_dynamic_group.name} to read repos in compartment id ${var.compartment_ocid}"
+    "Allow dynamic-group ${oci_identity_dynamic_group.oke_nodes_dynamic_group.name} to read repos in tenancy"
   ]
 }
 
 # --- OKE Cluster ---
 resource "oci_containerengine_cluster" "oke_cluster" {
   compartment_id     = var.compartment_ocid
+  # NOTE: Kubernetes version is kept at v1.33.1 as requested.
   kubernetes_version = "v1.33.1"
   name               = "ktor_oke_cluster"
   vcn_id             = oci_core_vcn.oke_vcn.id
@@ -176,27 +181,18 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
     size = 1
   }
 
-  # This dependency ensures the OCIR permissions are active before nodes are created.
   depends_on = [
     oci_identity_policy.oke_nodes_ocir_policy
   ]
 }
 
 # --- Kubeconfig Bootstrap ---
-data "oci_containerengine_cluster_kube_config" "oke_kube_config" {
-  cluster_id = oci_containerengine_cluster.oke_cluster.id
-}
-
-locals {
-  kubeconfig_yaml             = yamldecode(data.oci_containerengine_cluster_kube_config.oke_kube_config.content)
-  cluster_ca_certificate_data = local.kubeconfig_yaml.clusters[0].cluster["certificate-authority-data"]
-}
-
-# Provider for managing Kubernetes resources within the created OKE cluster
+# This block configures the Kubernetes provider to authenticate with the new OKE cluster
+# by using the OCI CLI to generate a temporary token.
 provider "kubernetes" {
-  alias = "oke"
-  host  = oci_containerengine_cluster.oke_cluster.endpoints[0].kubernetes
-  cluster_ca_certificate = base64decode(local.cluster_ca_certificate_data)
+  host = oci_containerengine_cluster.oke_cluster.endpoints[0].kubernetes
+
+  cluster_ca_certificate = base64decode(oci_containerengine_cluster.oke_cluster.endpoints[0].cluster_ca_certificate)
 
   exec {
     api_version = "client.authentication.k8s.io/v1beta1"
@@ -206,11 +202,22 @@ provider "kubernetes" {
 }
 
 # --- Kubernetes Application Deployment ---
-resource "kubernetes_deployment" "ktor_app_deployment" {
-  provider = kubernetes.oke
+resource "kubernetes_namespace" "app_ns" {
   metadata {
-    name   = "ktor-oke-app"
-    labels = { app = "ktor-oke-app" }
+    name = "ktor-app"
+  }
+}
+
+# REMOVED: The kubernetes_secret and associated auth_token variable are no longer necessary.
+# The IAM policy for the node pool is the more secure and modern way to grant the cluster
+# access to pull images from OCIR.
+
+resource "kubernetes_deployment" "ktor_app_deployment" {
+  provider = kubernetes
+  metadata {
+    name      = "ktor-oke-app"
+    labels    = { app = "ktor-oke-app" }
+    namespace = kubernetes_namespace.app_ns.metadata[0].name
   }
   spec {
     replicas = 2
@@ -222,6 +229,8 @@ resource "kubernetes_deployment" "ktor_app_deployment" {
         labels = { app = "ktor-oke-app" }
       }
       spec {
+        # REMOVED: The image_pull_secrets block is no longer needed.
+        # The worker nodes now have native IAM permission to access OCIR.
         container {
           image = var.docker_image
           name  = "ktor-oke-app-container"
@@ -233,17 +242,16 @@ resource "kubernetes_deployment" "ktor_app_deployment" {
     }
   }
 
-  # --- CRITICAL FIX: This prevents the race condition where Terraform tries to
-  # create the deployment before the cluster's nodes are ready.
   depends_on = [
     oci_containerengine_node_pool.oke_node_pool
   ]
 }
 
 resource "kubernetes_service" "ktor_app_service" {
-  provider = kubernetes.oke
+  provider = kubernetes
   metadata {
-    name = "ktor-oke-app-service"
+    name      = "ktor-oke-app-service"
+    namespace = kubernetes_namespace.app_ns.metadata[0].name
   }
   spec {
     selector = {
@@ -256,9 +264,21 @@ resource "kubernetes_service" "ktor_app_service" {
     type = "LoadBalancer"
   }
 
-  # --- CRITICAL FIX: This also ensures the service is not created before the
-  # nodes exist, which is a requirement for services of type LoadBalancer.
   depends_on = [
     oci_containerengine_node_pool.oke_node_pool
   ]
+}
+
+data "kubernetes_service" "ktor_service" {
+  provider = kubernetes
+  metadata {
+    name      = kubernetes_service.ktor_app_service.metadata[0].name
+    namespace = kubernetes_namespace.app_ns.metadata[0].name
+  }
+  depends_on = [kubernetes_service.ktor_app_service]
+}
+
+output "load_balancer_ip" {
+  description = "Public IP address of the Ktor application's load balancer."
+  value       = data.kubernetes_service.ktor_service.status[0].load_balancer[0].ingress[0].ip
 }
