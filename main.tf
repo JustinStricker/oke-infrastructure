@@ -1,43 +1,87 @@
-# This block configures the required providers for this Terraform project.
-# It specifies the source and version for each provider.
+# --- Variable Definitions ---
+# These variables define the inputs for the Terraform configuration.
+# The actual values are provided by the GitHub Actions workflow as secrets.
+
+variable "tenancy_ocid" {
+  description = "The OCID of the OCI tenancy."
+  type        = string
+}
+
+variable "user_ocid" {
+  description = "The OCID of the OCI user."
+  type        = string
+}
+
+variable "fingerprint" {
+  description = "The fingerprint of the API key."
+  type        = string
+}
+
+variable "private_key" {
+  description = "The content of the private API key file."
+  type        = string
+  sensitive   = true
+}
+
+variable "region" {
+  description = "The OCI region to deploy resources in."
+  type        = string
+}
+
+variable "compartment_ocid" {
+  description = "The OCID of the compartment to create resources in."
+  type        = string
+}
+
+variable "node_image_ocid" {
+  description = "The OCID of the OKE worker node image."
+  type        = string
+}
+
+variable "docker_image" {
+  description = "The full URL of the Docker image to deploy."
+  type        = string
+}
+
+variable "tenancy_namespace" {
+  description = "The OCI tenancy namespace for OCIR."
+  type        = string
+}
+
+
+# --- Terraform and Provider Configuration ---
+
+# This block configures Terraform itself and the required providers.
 terraform {
   # This backend block configures Terraform to store its state file remotely
   # in your OCI Object Storage bucket. This provides a persistent "memory"
   # for your infrastructure, solving the issue of state being lost between runs.
   backend "s3" {
-    bucket                      = "ktor-oke-app-tfstate"
-    key                         = "ktor-oke/terraform.tfstate"
-    region                      = "us-east-1" # This is a required placeholder for the S3 provider
-    
-    # Use the new endpoints block instead of the deprecated endpoint parameter
-    endpoints = {
-      s3 = "https://idrolupgk4or.compat.objectstorage.us-ashburn-1.oraclecloud.com"
-    }
+    bucket               = "ktor-oke-app-tfstate"
+    key                  = "ktor-oke/terraform.tfstate"
+    region               = "us-east-1" # This is a required placeholder for the S3 provider
+    endpoint             = "https://idrolupgk4or.compat.objectstorage.us-ashburn-1.oraclecloud.com"
 
     # Required settings for OCI compatibility
     skip_region_validation      = true
     skip_credentials_validation = true
-    use_path_style              = true # Updated from deprecated force_path_style
-    skip_requesting_account_id  = true # This prevents the backend from trying to validate credentials against AWS
+    use_path_style              = true # Updated from deprecated 'force_path_style'
+    skip_requesting_account_id  = true # Prevents the backend from trying to validate credentials against AWS
   }
 
   required_providers {
-    # The official OCI provider from Oracle.
     oci = {
       source  = "oracle/oci"
       version = "7.17.0"
     }
-    # The community-supported kubectl provider.
     kubectl = {
       source  = "gavinbunney/kubectl"
       version = "1.14.0"
     }
-    # The official Kubernetes provider.
     kubernetes = {
       source  = "hashicorp/kubernetes"
       version = "2.30.0"
     }
-    # Provider to manage local files.
     local = {
       source  = "hashicorp/local"
       version = "2.5.1"
@@ -46,7 +90,6 @@ terraform {
 }
 
 # Configure the Oracle Cloud Infrastructure (OCI) provider with credentials.
-# These values are passed in as variables from the GitHub Actions workflow.
 provider "oci" {
   tenancy_ocid     = var.tenancy_ocid
   user_ocid        = var.user_ocid
@@ -61,15 +104,12 @@ data "oci_containerengine_cluster_kube_config" "oke_kubeconfig" {
 }
 
 # Resource to save the fetched kubeconfig content to a local file.
-# This bridges the gap between the data source (which provides content)
-# and the Kubernetes providers (which need a file path).
 resource "local_file" "kubeconfig_file" {
   content  = data.oci_containerengine_cluster_kube_config.oke_kubeconfig.content
   filename = "${path.module}/kubeconfig"
 }
 
 # Configure the Kubernetes provider using the path to the local kubeconfig file.
-# This is a more robust method that avoids issues with executable paths in CI/CD.
 provider "kubernetes" {
   config_path = local_file.kubeconfig_file.filename
 }
@@ -79,28 +119,25 @@ provider "kubectl" {
   config_path = local_file.kubeconfig_file.filename
 }
 
+
 # --- Networking Resources ---
 
-# Fetches the list of availability domains in the region.
 data "oci_identity_availability_domains" "ads" {
   compartment_id = var.tenancy_ocid
 }
 
-# Creates a Virtual Cloud Network (VCN) for the cluster.
 resource "oci_core_vcn" "oke_vcn" {
   compartment_id = var.compartment_ocid
   display_name   = "oke_vcn"
   cidr_block     = "10.0.0.0/16"
 }
 
-# Creates an Internet Gateway to allow traffic to and from the internet.
 resource "oci_core_internet_gateway" "oke_ig" {
   compartment_id = var.compartment_ocid
   vcn_id         = oci_core_vcn.oke_vcn.id
   display_name   = "oke_ig"
 }
 
-# Creates a default route table for the VCN.
 resource "oci_core_default_route_table" "oke_route_table" {
   manage_default_resource_id = oci_core_vcn.oke_vcn.default_route_table_id
   display_name               = "oke_route_table"
@@ -110,7 +147,6 @@ resource "oci_core_default_route_table" "oke_route_table" {
   }
 }
 
-# Creates a subnet for the OKE worker nodes.
 resource "oci_core_subnet" "oke_nodes_subnet" {
   compartment_id     = var.compartment_ocid
   vcn_id             = oci_core_vcn.oke_vcn.id
@@ -121,7 +157,6 @@ resource "oci_core_subnet" "oke_nodes_subnet" {
   dhcp_options_id    = oci_core_vcn.oke_vcn.default_dhcp_options_id
 }
 
-# Creates a subnet for the Kubernetes load balancers.
 resource "oci_core_subnet" "oke_lb_subnet" {
   compartment_id     = var.compartment_ocid
   vcn_id             = oci_core_vcn.oke_vcn.id
@@ -132,12 +167,12 @@ resource "oci_core_subnet" "oke_lb_subnet" {
   dhcp_options_id    = oci_core_vcn.oke_vcn.default_dhcp_options_id
 }
 
+
 # --- OKE Cluster Resources ---
 
-# Creates the Oracle Kubernetes Engine (OKE) cluster.
 resource "oci_containerengine_cluster" "oke_cluster" {
   compartment_id     = var.compartment_ocid
-  kubernetes_version = "v1.33.1" # Reverted to the previous version
+  kubernetes_version = "v1.33.1"
   name               = "ktor_oke_cluster"
   vcn_id             = oci_core_vcn.oke_vcn.id
   options {
@@ -152,16 +187,15 @@ resource "oci_containerengine_cluster" "oke_cluster" {
   }
 }
 
-# Creates the node pool for the OKE cluster. These are the worker machines.
 resource "oci_containerengine_node_pool" "oke_node_pool" {
   cluster_id         = oci_containerengine_cluster.oke_cluster.id
   compartment_id     = var.compartment_ocid
   kubernetes_version = oci_containerengine_cluster.oke_cluster.kubernetes_version
   name               = "amd-pool-free"
-  node_shape         = "VM.Standard.A1.Flex" # Using the "Always Free" Ampere shape
+  node_shape         = "VM.Standard.A1.Flex"
   node_shape_config {
-    ocpus               = 1 # Specifying "Always Free" tier OCPUs
-    memory_in_gbs       = 6 # Specifying "Always Free" tier memory
+    ocpus               = 1
+    memory_in_gbs       = 6
   }
   node_source_details {
     image_id    = var.node_image_ocid
@@ -172,20 +206,19 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
       availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
       subnet_id           = oci_core_subnet.oke_nodes_subnet.id
     }
-    size = 1 # Number of nodes in the pool
+    size = 1
   }
 }
 
+
 # --- Kubernetes Deployment Resources ---
 
-# Creates a Kubernetes namespace for the application.
 resource "kubernetes_namespace" "app_ns" {
   metadata {
     name = "ktor-app"
   }
 }
 
-# Creates a Kubernetes deployment for the Ktor application.
 resource "kubernetes_deployment" "ktor_app_deployment" {
   metadata {
     name      = "ktor-app-deployment"
@@ -215,12 +248,9 @@ resource "kubernetes_deployment" "ktor_app_deployment" {
       }
     }
   }
-  # This deployment depends on the node pool being ready.
   depends_on = [oci_containerengine_node_pool.oke_node_pool]
 }
 
-# Creates a Kubernetes service to expose the application.
-# This will create a public load balancer.
 resource "kubernetes_service" "ktor_app_service" {
   metadata {
     name      = "ktor-app-service"
@@ -232,14 +262,15 @@ resource "kubernetes_service" "ktor_app_service" {
     }
     port {
       port        = 80
-      target_port = "8080"
+      target_port = 8080
     }
     type = "LoadBalancer"
   }
 }
 
-# Data source to get the status of the Kubernetes service after it's deployed.
-# This is needed to retrieve the load balancer's public IP address.
+
+# --- Data Sources for Outputs ---
+
 data "kubernetes_service" "ktor_service" {
   metadata {
     name      = kubernetes_service.ktor_app_service.metadata[0].name
@@ -249,3 +280,13 @@ data "kubernetes_service" "ktor_service" {
     kubernetes_service.ktor_app_service
   ]
 }
+
+
+# --- Outputs ---
+
+# This output will display the public IP address of the load balancer.
+output "load_balancer_ip" {
+  description = "Public IP address of the Ktor application's load balancer."
+  value       = data.kubernetes_service.ktor_service.status[0].load_balancer[0].ingress[0].ip
+}
+
