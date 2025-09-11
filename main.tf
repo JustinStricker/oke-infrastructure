@@ -171,14 +171,6 @@ resource "local_file" "kubeconfig_file" {
   filename = "${path.module}/kubeconfig"
 }
 
-provider "kubernetes" {
-  config_path = local_file.kubeconfig_file.filename
-}
-
-provider "kubectl" {
-  config_path = local_file.kubeconfig_file.filename
-}
-
 # --- Kubernetes Resources ---
 resource "kubernetes_namespace" "app_ns" {
   metadata {
