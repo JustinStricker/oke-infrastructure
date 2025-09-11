@@ -55,10 +55,18 @@ terraform {
   }
 
   required_providers {
-    oci        = { source = "oracle/oci", version = ">= 5.0" }
-    kubernetes = { source = "hashicorp/kubernetes", version = ">= 2.20" }
-    # NEW: Added the 'local' provider to manage files
-    local      = { source = "hashicorp/local", version = "2.5.1" }
+    oci = {
+      source  = "oracle/oci"
+      version = "5.55.0" # Updated to newest version
+    }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "2.31.0" # Updated to newest version
+    }
+    local = {
+      source  = "hashicorp/local"
+      version = "2.5.1" # Already at newest version
+    }
   }
 }
 
@@ -255,3 +263,4 @@ output "load_balancer_ip" {
     "creating..."
   )
 }
+
