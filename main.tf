@@ -227,7 +227,8 @@ resource "kubernetes_deployment" "ktor_app_deployment" {
         }
       }
       spec {
-        containers {
+        # This is the corrected block name
+        container {
           image = var.docker_image # The image built and pushed by the workflow
           name  = "ktor-oke-app-container"
           ports {
