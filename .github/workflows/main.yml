@@ -46,13 +46,11 @@ jobs:
           name: ktor-oke-app
           compartment: ${{ secrets.OCI_COMPARTMENT_OCID }}
 
-      # --- FIXED ---
       - name: Log into OCIR
         uses: oracle-actions/login-ocir@v1.3.0
         id: login-ocir
         with:
           auth_token: ${{ secrets.OCI_AUTH_TOKEN }}
-          # The 'region' parameter has been removed from this 'with' block
 
       - name: Cache Gradle
         uses: actions/cache@v3
@@ -79,9 +77,11 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
       
+      # --- FIXED URL ---
       - name: Install OCI CLI
         run: |
-          curl -L -o oci-cli.sh https://raw.exports.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh
+          # The URL has been corrected to remove the ".exports" typo
+          curl -L -o oci-cli.sh https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh
           bash oci-cli.sh --accept-all-defaults
           echo "/home/runner/bin" >> $GITHUB_PATH
           /home/runner/bin/oci --version
