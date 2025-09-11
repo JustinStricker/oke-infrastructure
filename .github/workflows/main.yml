@@ -53,15 +53,25 @@ jobs:
           auth_token: ${{ secrets.OCI_AUTH_TOKEN }}
           region: ${{ secrets.OCI_REGION }}
 
-      # REMOVED: The Gradle cache step is no longer needed.
-      # REMOVED: The Gradle build step is no longer needed.
+      # --- GRADLE STEPS ARE RESTORED ---
+      - name: Cache Gradle
+        uses: actions/cache@v3
+        with:
+          path: ~/.gradle/caches
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Build with Gradle
+        uses: gradle/gradle-build-action@v2
+        with:
+          gradle-version: '8.5'
+          arguments: shadowJar
 
       - name: Build and Push Docker Image
         id: build-image
         run: |
           IMAGE_TAG=$GITHUB_SHA
           IMAGE_URL="${{ steps.get-ocir-repository.outputs.repo_path }}:$IMAGE_TAG"
-          # This command now does EVERYTHING: builds the app and the image.
           docker build -t $IMAGE_URL .
           docker push $IMAGE_URL
           echo "image_url=$IMAGE_URL" >> $GITHUB_OUTPUT
@@ -78,9 +88,7 @@ jobs:
           
       - name: Terraform Init
         run: terraform init
-
-      # REMOVED the targeted apply/replace step as it was a one-time fix.
-      # A standard apply is all that's needed now.
+        
       - name: Terraform Apply
         run: |
           terraform apply -auto-approve \
