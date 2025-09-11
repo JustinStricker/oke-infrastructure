@@ -1,5 +1,4 @@
 # --- Variable Definitions ---
-# ... (no changes here) ...
 variable "tenancy_ocid" {
   description = "OCI tenancy OCID"
   type        = string
@@ -47,7 +46,6 @@ variable "tenancy_namespace" {
 }
 
 # --- Terraform Backend & Providers ---
-# ... (no changes here) ...
 terraform {
   backend "oci" {
     bucket    = "ktor-oke-app-tfstate"
@@ -73,7 +71,6 @@ provider "oci" {
 }
 
 # --- Networking ---
-# ... (no changes here) ...
 data "oci_identity_availability_domains" "ads" {
   compartment_id = var.tenancy_ocid
 }
@@ -120,7 +117,6 @@ resource "oci_core_subnet" "oke_lb_subnet" {
 }
 
 # --- OKE Cluster ---
-# ... (no changes here) ...
 resource "oci_containerengine_cluster" "oke_cluster" {
   compartment_id     = var.compartment_ocid
   kubernetes_version = "v1.33.1"
@@ -162,107 +158,27 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
 }
 
 # --- Kubeconfig Bootstrap ---
-# ... (This data source is still needed for the CA certificate) ...
-data "oci_containerengine_cluster_kube_config" "oke_kubeconfig" {
-  cluster_id = oci_containerengine_cluster.oke_cluster.id
-}
-
-# --- NEW DATA SOURCE FOR TOKEN ---
-# This data source reads the cluster and generates a temporary auth token.
-data "oci_containerengine_cluster_auth_token" "oke_auth_token" {
+data "oci_containerengine_cluster_kube_config" "oke_kube_config" {
   cluster_id = oci_containerengine_cluster.oke_cluster.id
 }
 
 locals {
-  kubeconfig_yaml = yamldecode(data.oci_containerengine_cluster_kube_config.oke_kubeconfig.content)
+  kubeconfig_yaml             = yamldecode(data.oci_containerengine_cluster_kube_config.oke_kube_config.content)
   cluster_ca_certificate_data = local.kubeconfig_yaml.clusters[0].cluster["certificate-authority-data"]
 }
 
-# --- REVISED KUBERNETES PROVIDER ---
-# This no longer uses 'exec' and instead uses the token from our new data source.
 provider "kubernetes" {
   alias = "oke"
-  
-  host  = oci_containerengine_cluster.oke_cluster.endpoints[0].kubernetes
-  token = data.oci_containerengine_cluster_auth_token.oke_auth_token.token
-  
+
+  host = oci_containerengine_cluster.oke_cluster.endpoints[0].kubernetes
+
   cluster_ca_certificate = base64decode(local.cluster_ca_certificate_data)
-}
 
-# --- Kubernetes Resources ---
-# ... (no changes here) ...
-resource "kubernetes_namespace" "app_ns" {
-  provider = kubernetes.oke
-
-  metadata {
-    name = "ktor-app"
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "oci"
+    args        = ["ce", "cluster", "generate-token", "--cluster-id", oci_containerengine_cluster.oke_cluster.id]
   }
 }
 
-resource "kubernetes_deployment" "ktor_app_deployment" {
-  provider = kubernetes.oke
-
-  metadata {
-    name      = "ktor-app-deployment"
-    namespace = kubernetes_namespace.app_ns.metadata[0].name
-  }
-  spec {
-    replicas = 1
-    selector {
-      match_labels = {
-        app = "ktor-app"
-      }
-    }
-    template {
-      metadata {
-        labels = {
-          app = "ktor-app"
-        }
-      }
-      spec {
-        container {
-          image = var.docker_image
-          name  = "ktor-app-container"
-          port {
-            container_port = 8080
-          }
-        }
-      }
-    }
-  }
-  depends_on = [oci_containerengine_node_pool.oke_node_pool]
-}
-
-resource "kubernetes_service" "ktor_app_service" {
-  provider = kubernetes.oke
-
-  metadata {
-    name      = "ktor-app-service"
-    namespace = kubernetes_namespace.app_ns.metadata[0].name
-  }
-  spec {
-    selector = {
-      app = kubernetes_deployment.ktor_app_deployment.spec[0].template[0].metadata[0].labels.app
-    }
-    port {
-      port        = 80
-      target_port = 8080
-    }
-    type = "LoadBalancer"
-  }
-}
-
-data "kubernetes_service" "ktor_service" {
-  provider = kubernetes.oke
-
-  metadata {
-    name      = kubernetes_service.ktor_app_service.metadata[0].name
-    namespace = kubernetes_namespace.app_ns.metadata[0].name
-  }
-  depends_on = [kubernetes_service.ktor_app_service]
-}
-
-output "load_balancer_ip" {
-  description = "Public IP address of the Ktor application's load balancer."
-  value       = data.kubernetes_service.ktor_service.status[0].load_balancer[0].ingress[0].ip
-}
+# --- Kubern
