@@ -80,12 +80,14 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
       
+      # FIXED: Use the full path to verify the OCI CLI installation
       - name: Install OCI CLI
         run: |
           curl -L -o oci-cli.sh https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh
           bash oci-cli.sh --accept-all-defaults
           echo "/home/runner/bin" >> $GITHUB_PATH
-          oci --version
+          # Verify using the full path, since the current step's PATH is not yet updated
+          /home/runner/bin/oci --version
           
       - name: Terraform Init
         run: terraform init
