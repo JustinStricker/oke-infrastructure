@@ -7,9 +7,17 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    # This env block is now much simpler.
-    # We only need the TF_VARs for the OCI provider configuration.
     env:
+      # --- OCI CLI Variables (FIX) ---
+      # These are REQUIRED by the oracle-actions tools.
+      OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
+      OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
+      OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+      OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}
+      OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
+
+      # --- Terraform Provider Input Variables ---
+      # These pass secrets into your .tf files as input variables.
       TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
       TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
       TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
@@ -20,15 +28,12 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      # --- NEW AUTHENTICATION STEP ---
-      # This is the most reliable way to handle OCI authentication in CI/CD.
-      # It creates the config and key files that all OCI tools expect.
+      # This step is still useful for Terraform, which will prefer it.
       - name: Setup OCI Config File
         run: |
           set -eo pipefail # Fail on any error
           mkdir -p ~/.oci
           echo "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/key.pem
-          # Ensure the key file has the correct permissions
           chmod 600 ~/.oci/key.pem
           
           cat > ~/.oci/config <<-EOF
@@ -41,6 +46,7 @@ jobs:
           EOF
           echo "OCI config file created successfully."
 
+      # Now this step will find the OCI_CLI_REGION variable and succeed.
       - name: Get or create an OCIR Repository
         id: get-ocir-repository
         uses: oracle-actions/get-ocir-repository@v1.3.0
