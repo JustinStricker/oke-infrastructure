@@ -47,16 +47,16 @@ variable "tenancy_namespace" {
 
 # --- Terraform Backend & Providers ---
 terraform {
-  # CHANGED: Replaced the "s3" backend with the native "oci" backend.
-  # This is the recommended approach for storing state in OCI Object Storage.
   backend "oci" {
-    bucket = "ktor-oke-app-tfstate"
-    key    = "ktor-oke/terraform.tfstate"
-    region = "us-ashburn-1" # NOTE: Use an OCI region identifier
+    bucket    = "ktor-oke-app-tfstate"
+    key       = "ktor-oke/terraform.tfstate"
+    region    = "us-ashburn-1"
+    # FIXED: Added your specific Object Storage namespace to prevent the interactive prompt.
+    namespace = "idrolupgk4or"
   }
 
   required_providers {
-    oci        = { source = "oracle/oci", version = ">= 5.0" } # Version updated for better compatibility
+    oci        = { source = "oracle/oci", version = ">= 5.0" }
     kubectl    = { source = "gavinbunney/kubectl", version = "1.14.0" }
     kubernetes = { source = "hashicorp/kubernetes", version = ">= 2.20" }
     local      = { source = "hashicorp/local", version = "2.5.1" }
@@ -120,9 +120,7 @@ resource "oci_core_subnet" "oke_lb_subnet" {
 # --- OKE Cluster ---
 resource "oci_containerengine_cluster" "oke_cluster" {
   compartment_id     = var.compartment_ocid
-  # NOTE: Using a supported Kubernetes version. "v1.33.1" is not a valid version.
-  # Please check the OCI documentation for currently supported versions.
-  kubernetes_version = "v1.29.1"
+  kubernetes_version = "v1.29.1" # Please ensure this is a supported version in your region
   name               = "ktor_oke_cluster"
   vcn_id             = oci_core_vcn.oke_vcn.id
   options {
@@ -165,13 +163,6 @@ data "oci_containerengine_cluster_kube_config" "oke_kubeconfig" {
   cluster_id = oci_containerengine_cluster.oke_cluster.id
 }
 
-# REMOVED: The local_file resource is no longer needed because the Kubernetes
-# provider will be configured directly in memory.
-# resource "local_file" "kubeconfig_file" { ... }
-
-# CHANGED: Added an aliased Kubernetes provider. It's configured dynamically
-# using the credentials from the OKE cluster data source. This solves the
-# "chicken-and-egg" problem.
 provider "kubernetes" {
   alias = "oke"
 
@@ -186,7 +177,6 @@ provider "kubernetes" {
 
 # --- Kubernetes Resources ---
 resource "kubernetes_namespace" "app_ns" {
-  # CHANGED: Explicitly use the aliased provider.
   provider = kubernetes.oke
 
   metadata {
@@ -195,7 +185,6 @@ resource "kubernetes_namespace" "app_ns" {
 }
 
 resource "kubernetes_deployment" "ktor_app_deployment" {
-  # CHANGED: Explicitly use the aliased provider.
   provider = kubernetes.oke
 
   metadata {
@@ -230,7 +219,6 @@ resource "kubernetes_deployment" "ktor_app_deployment" {
 }
 
 resource "kubernetes_service" "ktor_app_service" {
-  # CHANGED: Explicitly use the aliased provider.
   provider = kubernetes.oke
 
   metadata {
@@ -250,7 +238,6 @@ resource "kubernetes_service" "ktor_app_service" {
 }
 
 data "kubernetes_service" "ktor_service" {
-  # CHANGED: Explicitly use the aliased provider.
   provider = kubernetes.oke
 
   metadata {
