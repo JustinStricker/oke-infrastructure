@@ -204,7 +204,6 @@ resource "local_file" "kubeconfig_file" {
 # Configure the provider to use the temporary file path
 provider "kubernetes" {
   config_path = local_file.kubeconfig_file.filename
-  depends_on  = [local_file.kubeconfig_file]
 }
 
 # --- Kubernetes Application Deployment ---
@@ -267,4 +266,3 @@ output "load_balancer_ip" {
     "creating..."
   )
 }
-
