@@ -170,9 +170,8 @@ locals {
 provider "kubernetes" {
   alias = "oke"
 
-  # FIXED: Source the host/endpoint directly from the cluster resource.
-  # This creates a more reliable dependency than using the data source.
-  host = oci_containerengine_cluster.oke_cluster.endpoints.kubernetes
+  # FIXED: Access the first element [0] of the endpoints list.
+  host = oci_containerengine_cluster.oke_cluster.endpoints[0].kubernetes
   
   cluster_ca_certificate = base64decode(local.cluster_ca_certificate_data)
   
