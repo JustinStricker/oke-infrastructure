@@ -1,10 +1,5 @@
-# This workflow builds a Ktor application, containerizes it, pushes the
-# resulting image to Oracle Cloud Infrastructure Registry (OCIR), and then
-# uses Terraform to deploy the application to Oracle Kubernetes Engine (OKE).
-
 name: Build and Deploy to OKE
 
-# This workflow triggers on any push to the 'main' branch.
 on:
   push:
     branches: [ "main" ]
@@ -12,27 +7,20 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    # Define all necessary credentials as environment variables for the entire job.
-    # This ensures that all steps (Oracle actions, Terraform backend, Terraform provider)
-    # have access to the secrets they need.
     env:
-      # Credentials for the Oracle Actions (get-ocir-repository, login-ocir)
       OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
       OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
       OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
       OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}
       OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
 
-      # Credentials for the Terraform S3 Backend (OCI Object Storage)
-      # The S3 backend requires S3-compatible credentials (Customer Secret Keys).
       AWS_ACCESS_KEY_ID: ${{ secrets.OCI_S3_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.OCI_S3_SECRET_ACCESS_KEY }}
-      AWS_REGION: ${{ secrets.OCI_REGION }} # Required for signing requests correctly
-      AWS_DEFAULT_REGION: ${{ secrets.OCI_REGION }} # Added for SDK compatibility
-      AWS_S3_SIGNATURE_VERSION: 'v4' # Explicitly set signature version for OCI compatibility
-      AWS_S3_US_EAST_1_REGIONAL_ENDPOINT: 'regional' # Final fix for OCI S3 signature compatibility
+      AWS_REGION: ${{ secrets.OCI_REGION }}
+      AWS_DEFAULT_REGION: ${{ secrets.OCI_REGION }}
+      AWS_S3_SIGNATURE_VERSION: 'v4'
+      AWS_S3_US_EAST_1_REGIONAL_ENDPOINT: 'regional'
 
-      # Credentials for the Terraform OCI Provider
       TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
       TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
       TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
@@ -43,13 +31,16 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
+      - name: Set OCI S3 Compatibility Flags
+        run: echo "AWS_S3_USE_UNSIGNED_PAYLOAD=true" >> $GITHUB_ENV
+
       - name: Get or create an OCIR Repository
         id: get-ocir-repository
         uses: oracle-actions/get-ocir-repository@v1.3.0
         with:
           name: ktor-oke-app
           compartment: ${{ secrets.OCI_COMPARTMENT_OCID }}
-          
+
       - name: Log into OCIR
         uses: oracle-actions/login-ocir@v1.3.0
         id: login-ocir
@@ -57,10 +48,17 @@ jobs:
           auth_token: ${{ secrets.OCI_AUTH_TOKEN }}
           region: ${{ secrets.OCI_REGION }}
 
+      - name: Cache Gradle
+        uses: actions/cache@v3
+        with:
+          path: ~/.gradle/caches
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
       - name: Build with Gradle
         uses: gradle/gradle-build-action@v2
         with:
-          gradle-version: '8.5' # Pinned to a compatible version
+          gradle-version: '8.5'
           arguments: shadowJar
 
       - name: Build and Push Docker Image
@@ -71,7 +69,7 @@ jobs:
           docker build -t $IMAGE_URL .
           docker push $IMAGE_URL
           echo "image_url=$IMAGE_URL" >> $GITHUB_OUTPUT
-          
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
 
