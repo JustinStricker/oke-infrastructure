@@ -1,6 +1,5 @@
 # --- Terraform Backend & Providers ---
 terraform {
-  # Stores the state file remotely in OCI Object Storage for safety and collaboration
   backend "oci" {
     bucket    = "ktor-oke-app-tfstate"
     key       = "ktor-oke/terraform.tfstate"
@@ -24,18 +23,21 @@ terraform {
   }
 }
 
-# Provider for managing Oracle Cloud Infrastructure resources
+# --- OCI Provider Configuration ---
 provider "oci" {
   tenancy_ocid = var.tenancy_ocid
   user_ocid    = var.user_ocid
   fingerprint  = var.fingerprint
-  private_key  = var.private_key
+  private_key  = base64decode(var.private_key_base64)
   region       = var.region
 }
 
-# --- Variable Definitions ---
-# These variables receive their values from the GitHub Actions workflow environment
+# --- Kubernetes Provider Configuration ---
+provider "kubernetes" {
+  config_path = local_file.kubeconfig_file.filename
+}
 
+# --- Variable Definitions ---
 variable "tenancy_ocid" {
   description = "OCI tenancy OCID"
   type        = string
@@ -51,8 +53,8 @@ variable "fingerprint" {
   type        = string
 }
 
-variable "private_key" {
-  description = "Private API key content"
+variable "private_key_base64" {
+  description = "Base64-encoded private key"
   type        = string
   sensitive   = true
 }
@@ -190,20 +192,13 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
 }
 
 # --- Kubeconfig Bootstrap ---
-# Fetch the kubeconfig content directly from OCI
 data "oci_containerengine_cluster_kube_config" "oke_kube_config" {
   cluster_id = oci_containerengine_cluster.oke_cluster.id
 }
 
-# Save the fetched content to a temporary file
 resource "local_file" "kubeconfig_file" {
   content  = data.oci_containerengine_cluster_kube_config.oke_kube_config.content
   filename = "${path.module}/kubeconfig"
-}
-
-# Configure the provider to use the temporary file path
-provider "kubernetes" {
-  config_path = local_file.kubeconfig_file.filename
 }
 
 # --- Kubernetes Application Deployment ---
