@@ -1,4 +1,3 @@
-# --- Terraform Backend & Providers ---
 terraform {
   backend "oci" {
     bucket    = "ktor-oke-app-tfstate"
@@ -23,7 +22,6 @@ terraform {
   }
 }
 
-# --- OCI Provider Configuration ---
 provider "oci" {
   tenancy_ocid = var.tenancy_ocid
   user_ocid    = var.user_ocid
@@ -32,59 +30,56 @@ provider "oci" {
   region       = var.region
 }
 
-# --- Kubernetes Provider Configuration ---
 provider "kubernetes" {
   config_path = local_file.kubeconfig_file.filename
 }
 
-# --- Variable Definitions ---
 variable "tenancy_ocid" {
-  description = "OCI tenancy OCID"
   type        = string
+  description = "OCI tenancy OCID"
 }
 
 variable "user_ocid" {
-  description = "OCI user OCID"
   type        = string
+  description = "OCI user OCID"
 }
 
 variable "fingerprint" {
-  description = "API key fingerprint"
   type        = string
+  description = "API key fingerprint"
 }
 
 variable "private_key_base64" {
-  description = "Base64-encoded private key"
   type        = string
   sensitive   = true
+  description = "Base64-encoded private key"
 }
 
 variable "region" {
-  description = "OCI region"
   type        = string
+  description = "OCI region"
 }
 
 variable "compartment_ocid" {
-  description = "Target compartment OCID where resources will be created"
   type        = string
+  description = "Target compartment OCID"
 }
 
 variable "node_image_ocid" {
-  description = "The OCID of the image to use for the OKE worker nodes"
   type        = string
+  description = "OCID of the image for OKE worker nodes"
 }
 
 variable "docker_image" {
-  description = "The full URL of the Docker image built by the CI/CD pipeline"
   type        = string
+  description = "Full URL of the Docker image"
 }
 
 variable "tenancy_namespace" {
-  description = "The Object Storage namespace, used for OCIR"
   type        = string
+  description = "Object Storage namespace for OCIR"
 }
 
-# --- Networking ---
 data "oci_identity_availability_domains" "ads" {
   compartment_id = var.tenancy_ocid
 }
@@ -130,17 +125,14 @@ resource "oci_core_subnet" "oke_lb_subnet" {
   dhcp_options_id   = oci_core_vcn.oke_vcn.default_dhcp_options_id
 }
 
-# --- IAM Policy for OKE Worker Nodes to access OCIR ---
 resource "oci_identity_dynamic_group" "oke_nodes_dynamic_group" {
-  provider       = oci
   compartment_id = var.tenancy_ocid
-  description    = "Dynamic group for OKE worker nodes to pull images from OCIR"
+  description    = "Dynamic group for OKE worker nodes"
   name           = "oke-nodes-dynamic-group"
   matching_rule  = "ALL {instance.compartment.id = '${var.compartment_ocid}', resource.type = 'instance'}"
 }
 
 resource "oci_identity_policy" "oke_nodes_ocir_policy" {
-  provider       = oci
   compartment_id = var.tenancy_ocid
   description    = "Allow OKE nodes to read container images from OCIR"
   name           = "oke-nodes-ocir-policy"
@@ -149,7 +141,6 @@ resource "oci_identity_policy" "oke_nodes_ocir_policy" {
   ]
 }
 
-# --- OKE Cluster ---
 resource "oci_containerengine_cluster" "oke_cluster" {
   compartment_id     = var.compartment_ocid
   kubernetes_version = "v1.33.1"
@@ -186,12 +177,9 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
     }
     size = 1
   }
-  depends_on = [
-    oci_identity_policy.oke_nodes_ocir_policy
-  ]
+  depends_on = [oci_identity_policy.oke_nodes_ocir_policy]
 }
 
-# --- Kubeconfig Bootstrap ---
 data "oci_containerengine_cluster_kube_config" "oke_kube_config" {
   cluster_id = oci_containerengine_cluster.oke_cluster.id
 }
@@ -201,9 +189,7 @@ resource "local_file" "kubeconfig_file" {
   filename = "${path.module}/kubeconfig"
 }
 
-# --- Kubernetes Application Deployment ---
 resource "kubernetes_deployment" "ktor_app_deployment" {
-  provider = kubernetes
   metadata {
     name   = "ktor-oke-app"
     labels = { app = "ktor-oke-app" }
@@ -228,13 +214,10 @@ resource "kubernetes_deployment" "ktor_app_deployment" {
       }
     }
   }
-  depends_on = [
-    oci_containerengine_node_pool.oke_node_pool
-  ]
+  depends_on = [oci_containerengine_node_pool.oke_node_pool]
 }
 
 resource "kubernetes_service" "ktor_app_service" {
-  provider = kubernetes
   metadata {
     name = "ktor-oke-app-service"
   }
@@ -248,12 +231,9 @@ resource "kubernetes_service" "ktor_app_service" {
     }
     type = "LoadBalancer"
   }
-  depends_on = [
-    oci_containerengine_node_pool.oke_node_pool
-  ]
+  depends_on = [oci_containerengine_node_pool.oke_node_pool]
 }
 
-# --- Outputs ---
 output "load_balancer_ip" {
   description = "Public IP address of the Ktor application's load balancer."
   value = try(
@@ -261,3 +241,4 @@ output "load_balancer_ip" {
     "creating..."
   )
 }
+
