@@ -119,7 +119,7 @@ resource "oci_core_subnet" "oke_lb_subnet" {
 # --- OKE Cluster ---
 resource "oci_containerengine_cluster" "oke_cluster" {
   compartment_id     = var.compartment_ocid
-  kubernetes_version = "v1.29.1"
+  kubernetes_version = "v1.33.1"
   name               = "ktor_oke_cluster"
   vcn_id             = oci_core_vcn.oke_vcn.id
   options {
