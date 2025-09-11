@@ -62,7 +62,6 @@ terraform {
   }
 }
 
-# This provider block is configured by the TF_VARs set in the main.yml workflow.
 provider "oci" {
   tenancy_ocid = var.tenancy_ocid
   user_ocid    = var.user_ocid
@@ -120,7 +119,6 @@ resource "oci_core_subnet" "oke_lb_subnet" {
 # --- OKE Cluster ---
 resource "oci_containerengine_cluster" "oke_cluster" {
   compartment_id     = var.compartment_ocid
-  # NOTE: Please verify this is a supported Kubernetes version in your region.
   kubernetes_version = "v1.29.1"
   name               = "ktor_oke_cluster"
   vcn_id             = oci_core_vcn.oke_vcn.id
@@ -164,12 +162,22 @@ data "oci_containerengine_cluster_kube_config" "oke_kubeconfig" {
   cluster_id = oci_containerengine_cluster.oke_cluster.id
 }
 
-# This provider is configured dynamically after the OKE cluster is created.
+# --- NEW LOCALS BLOCK ---
+# This block parses the YAML content of the kubeconfig to extract the
+# cluster CA certificate, which is not exposed as a top-level attribute.
+locals {
+  kubeconfig_yaml = yamldecode(data.oci_containerengine_cluster_kube_config.oke_kubeconfig.content)
+  cluster_ca_certificate_data = local.kubeconfig_yaml.clusters[0].cluster["certificate-authority-data"]
+}
+
+# --- CORRECTED KUBERNETES PROVIDER ---
 provider "kubernetes" {
   alias = "oke"
 
-  host                   = data.oci_containerengine_cluster_kube_config.oke_kubeconfig.endpoint
-  cluster_ca_certificate = base64decode(data.oci_containerengine_cluster_kube_config.oke_kubeconfig.cluster_ca_certificate)
+  host = data.oci_containerengine_cluster_kube_config.oke_kubeconfig.endpoint
+  # The CA certificate is now sourced from the parsed local variable.
+  cluster_ca_certificate = base64decode(local.cluster_ca_certificate_data)
+  
   exec {
     api_version = "client.authentication.k8s.io/v1beta1"
     command     = "oci"
