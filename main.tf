@@ -47,22 +47,19 @@ variable "tenancy_namespace" {
 
 # --- Terraform Backend & Providers ---
 terraform {
-  backend "s3" {
-    bucket                      = "ktor-oke-app-tfstate"
-    key                         = "ktor-oke/terraform.tfstate"
-    region                      = "us-east-1"
-    endpoint                    = "https://idrolupgk4or.compat.objectstorage.us-ashburn-1.oraclecloud.com"
-    skip_region_validation      = true
-    skip_credentials_validation = true
-    use_path_style              = true
-    skip_requesting_account_id  = true
+  # CHANGED: Replaced the "s3" backend with the native "oci" backend.
+  # This is the recommended approach for storing state in OCI Object Storage.
+  backend "oci" {
+    bucket = "ktor-oke-app-tfstate"
+    key    = "ktor-oke/terraform.tfstate"
+    region = "us-ashburn-1" # NOTE: Use an OCI region identifier
   }
 
   required_providers {
-    oci         = { source = "oracle/oci", version = "7.17.0" }
-    kubectl     = { source = "gavinbunney/kubectl", version = "1.14.0" }
-    kubernetes  = { source = "hashicorp/kubernetes", version = "2.30.0" }
-    local       = { source = "hashicorp/local", version = "2.5.1" }
+    oci        = { source = "oracle/oci", version = ">= 5.0" } # Version updated for better compatibility
+    kubectl    = { source = "gavinbunney/kubectl", version = "1.14.0" }
+    kubernetes = { source = "hashicorp/kubernetes", version = ">= 2.20" }
+    local      = { source = "hashicorp/local", version = "2.5.1" }
   }
 }
 
@@ -101,29 +98,31 @@ resource "oci_core_default_route_table" "oke_route_table" {
 }
 
 resource "oci_core_subnet" "oke_nodes_subnet" {
-  compartment_id     = var.compartment_ocid
-  vcn_id             = oci_core_vcn.oke_vcn.id
-  display_name       = "oke_nodes_subnet"
-  cidr_block         = "10.0.1.0/24"
-  route_table_id     = oci_core_vcn.oke_vcn.default_route_table_id
-  security_list_ids  = [oci_core_vcn.oke_vcn.default_security_list_id]
-  dhcp_options_id    = oci_core_vcn.oke_vcn.default_dhcp_options_id
+  compartment_id    = var.compartment_ocid
+  vcn_id            = oci_core_vcn.oke_vcn.id
+  display_name      = "oke_nodes_subnet"
+  cidr_block        = "10.0.1.0/24"
+  route_table_id    = oci_core_vcn.oke_vcn.default_route_table_id
+  security_list_ids = [oci_core_vcn.oke_vcn.default_security_list_id]
+  dhcp_options_id   = oci_core_vcn.oke_vcn.default_dhcp_options_id
 }
 
 resource "oci_core_subnet" "oke_lb_subnet" {
-  compartment_id     = var.compartment_ocid
-  vcn_id             = oci_core_vcn.oke_vcn.id
-  display_name       = "oke_lb_subnet"
-  cidr_block         = "10.0.2.0/24"
-  route_table_id     = oci_core_vcn.oke_vcn.default_route_table_id
-  security_list_ids  = [oci_core_vcn.oke_vcn.default_security_list_id]
-  dhcp_options_id    = oci_core_vcn.oke_vcn.default_dhcp_options_id
+  compartment_id    = var.compartment_ocid
+  vcn_id            = oci_core_vcn.oke_vcn.id
+  display_name      = "oke_lb_subnet"
+  cidr_block        = "10.0.2.0/24"
+  route_table_id    = oci_core_vcn.oke_vcn.default_route_table_id
+  security_list_ids = [oci_core_vcn.oke_vcn.default_security_list_id]
+  dhcp_options_id   = oci_core_vcn.oke_vcn.default_dhcp_options_id
 }
 
 # --- OKE Cluster ---
 resource "oci_containerengine_cluster" "oke_cluster" {
   compartment_id     = var.compartment_ocid
-  kubernetes_version = "v1.33.1"
+  # NOTE: Using a supported Kubernetes version. "v1.33.1" is not a valid version.
+  # Please check the OCI documentation for currently supported versions.
+  kubernetes_version = "v1.29.1"
   name               = "ktor_oke_cluster"
   vcn_id             = oci_core_vcn.oke_vcn.id
   options {
@@ -166,19 +165,39 @@ data "oci_containerengine_cluster_kube_config" "oke_kubeconfig" {
   cluster_id = oci_containerengine_cluster.oke_cluster.id
 }
 
-resource "local_file" "kubeconfig_file" {
-  content  = data.oci_containerengine_cluster_kube_config.oke_kubeconfig.content
-  filename = "${path.module}/kubeconfig"
+# REMOVED: The local_file resource is no longer needed because the Kubernetes
+# provider will be configured directly in memory.
+# resource "local_file" "kubeconfig_file" { ... }
+
+# CHANGED: Added an aliased Kubernetes provider. It's configured dynamically
+# using the credentials from the OKE cluster data source. This solves the
+# "chicken-and-egg" problem.
+provider "kubernetes" {
+  alias = "oke"
+
+  host                   = data.oci_containerengine_cluster_kube_config.oke_kubeconfig.endpoint
+  cluster_ca_certificate = base64decode(data.oci_containerengine_cluster_kube_config.oke_kubeconfig.cluster_ca_certificate)
+  exec {
+    api_version = "client.authentication.k8s.io/v1beta1"
+    command     = "oci"
+    args        = ["ce", "cluster", "generate-token", "--cluster-id", oci_containerengine_cluster.oke_cluster.id]
+  }
 }
 
 # --- Kubernetes Resources ---
 resource "kubernetes_namespace" "app_ns" {
+  # CHANGED: Explicitly use the aliased provider.
+  provider = kubernetes.oke
+
   metadata {
     name = "ktor-app"
   }
 }
 
 resource "kubernetes_deployment" "ktor_app_deployment" {
+  # CHANGED: Explicitly use the aliased provider.
+  provider = kubernetes.oke
+
   metadata {
     name      = "ktor-app-deployment"
     namespace = kubernetes_namespace.app_ns.metadata[0].name
@@ -211,6 +230,9 @@ resource "kubernetes_deployment" "ktor_app_deployment" {
 }
 
 resource "kubernetes_service" "ktor_app_service" {
+  # CHANGED: Explicitly use the aliased provider.
+  provider = kubernetes.oke
+
   metadata {
     name      = "ktor-app-service"
     namespace = kubernetes_namespace.app_ns.metadata[0].name
@@ -228,6 +250,9 @@ resource "kubernetes_service" "ktor_app_service" {
 }
 
 data "kubernetes_service" "ktor_service" {
+  # CHANGED: Explicitly use the aliased provider.
+  provider = kubernetes.oke
+
   metadata {
     name      = kubernetes_service.ktor_app_service.metadata[0].name
     namespace = kubernetes_namespace.app_ns.metadata[0].name
