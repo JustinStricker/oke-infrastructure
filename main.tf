@@ -123,6 +123,73 @@ resource "oci_core_subnet" "oke_nodes_subnet" {
 }
 
 # -----------------------------------------------------------------------------
+# Network Security Groups (NSGs) for OKE
+# -----------------------------------------------------------------------------
+# These NSGs provide the necessary rules for the cluster to function.
+resource "oci_core_network_security_group" "api_endpoint_nsg" {
+  compartment_id = var.compartment_ocid
+  vcn_id         = oci_core_vcn.oke_vcn.id
+  display_name   = "oke_api_endpoint_nsg"
+}
+
+resource "oci_core_network_security_group" "worker_node_nsg" {
+  compartment_id = var.compartment_ocid
+  vcn_id         = oci_core_vcn.oke_vcn.id
+  display_name   = "oke_worker_node_nsg"
+}
+
+# Rule to allow ingress to the API endpoint from the worker nodes
+resource "oci_core_network_security_group_security_rule" "api_ingress_rule" {
+  network_security_group_id = oci_core_network_security_group.api_endpoint_nsg.id
+  direction                 = "INGRESS"
+  protocol                  = "6"  # TCP
+  source                    = oci_core_subnet.oke_nodes_subnet.cidr_block
+  source_type               = "CIDR_BLOCK"
+  stateless                 = false
+  tcp_options {
+    destination_port_range {
+      max = 6443
+      min = 6443
+    }
+  }
+}
+
+# Rule to allow communication between worker nodes
+resource "oci_core_network_security_group_security_rule" "node_ingress_rules" {
+  network_security_group_id = oci_core_network_security_group.worker_node_nsg.id
+  direction                 = "INGRESS"
+  protocol                  = "all"
+  source                    = oci_core_subnet.oke_nodes_subnet.cidr_block
+  source_type               = "CIDR_BLOCK"
+  stateless                 = false
+}
+
+# Rules to allow worker nodes to communicate with the API endpoint and the internet
+resource "oci_core_network_security_group_security_rule" "node_egress_to_api" {
+  network_security_group_id = oci_core_network_security_group.worker_node_nsg.id
+  direction                 = "EGRESS"
+  protocol                  = "6" # TCP
+  destination               = oci_core_subnet.oke_api_subnet.cidr_block
+  destination_type          = "CIDR_BLOCK"
+  stateless                 = false
+  tcp_options {
+    destination_port_range {
+      max = 6443
+      min = 6443
+    }
+  }
+}
+
+resource "oci_core_network_security_group_security_rule" "node_egress_to_internet" {
+  network_security_group_id = oci_core_network_security_group.worker_node_nsg.id
+  direction                 = "EGRESS"
+  protocol                  = "all"
+  destination               = "0.0.0.0/0"
+  destination_type          = "CIDR_BLOCK"
+  stateless                 = false
+}
+
+# -----------------------------------------------------------------------------
 # OKE Cluster Resources (Free Tier)
 # -----------------------------------------------------------------------------
 resource "oci_containerengine_cluster" "oke_cluster" {
@@ -134,11 +201,12 @@ resource "oci_containerengine_cluster" "oke_cluster" {
   endpoint_config {
     subnet_id            = oci_core_subnet.oke_api_subnet.id
     is_public_ip_enabled = true
+    nsg_ids              = [oci_core_network_security_group.api_endpoint_nsg.id]
   }
 
   options {
     kubernetes_network_config {
-      pods_cidr     = "10.244.0.0/16"
+      pods_cidr    = "10.244.0.0/16"
       services_cidr = "10.96.0.0/16"
     }
   }
@@ -170,6 +238,7 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
       subnet_id           = oci_core_subnet.oke_nodes_subnet.id
     }
     size = 4
+    nsg_ids = [oci_core_network_security_group.worker_node_nsg.id]
   }
 }
 
