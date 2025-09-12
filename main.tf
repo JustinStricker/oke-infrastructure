@@ -143,23 +143,20 @@ resource "oci_containerengine_cluster" "oke_cluster" {
 }
 
 resource "oci_containerengine_node_pool" "oke_node_pool" {
-  # --- FIX WAS APPLIED HERE ---
-  # The argument was corrected from "cluster_.id" to "cluster_id".
   cluster_id         = oci_containerengine_cluster.oke_cluster.id
-  
   compartment_id     = var.compartment_ocid
   kubernetes_version = var.k8s_version
   name               = "poc-free-tier-pool"
   node_shape         = "VM.Standard.A1.Flex" # Always Free Ampere A1 (Arm-based) shape
 
-  # Configured for 4 nodes, each with 1 OCPU and 6GB of RAM,
-  # staying within the Always Free limits (4 OCPUs and 24GB RAM total).
   node_shape_config {
     memory_in_gbs = 6
     ocpus         = 1
   }
 
-  dynamic "source_details" {
+  # --- FIX #1 WAS APPLIED HERE ---
+  # The dynamic block was renamed from "source_details" to "node_source_details".
+  dynamic "node_source_details" {
     for_each = var.node_image_ocid != null ? [1] : []
     content {
       image_id    = var.node_image_ocid
@@ -180,8 +177,13 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
 # Kubernetes RBAC for CI/CD Pipeline
 # -----------------------------------------------------------------------------
 provider "kubernetes" {
-  host                   = oci_containerengine_cluster.oke_cluster.endpoints[0].public_endpoint
-  cluster_ca_certificate = base64decode(oci_containerengine_cluster.oke_cluster.endpoints[0].cluster_ca_certificate)
+  host = oci_containerengine_cluster.oke_cluster.endpoints[0].public_endpoint
+  
+  # --- FIX #2 WAS APPLIED HERE ---
+  # The reference was corrected to get the CA certificate from the cluster
+  # resource directly, not from within the 'endpoints' object.
+  cluster_ca_certificate = base64decode(oci_containerengine_cluster.oke_cluster.cluster_ca_certificate)
+  
   exec {
     api_version = "client.authentication.k8s.io/v1beta1"
     command     = "oci"
