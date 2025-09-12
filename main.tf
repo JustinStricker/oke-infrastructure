@@ -1,4 +1,4 @@
-# FILE: main.tf (Corrected)
+# FILE: main.tf
 
 terraform {
   backend "oci" {}
@@ -8,11 +8,13 @@ terraform {
       source  = "oracle/oci"
       version = "7.17.0"
     }
-    # --- FIX WAS APPLIED HERE ---
-    # Corrected the source from "hashcorp" to "hashicorp".
     kubernetes = {
       source  = "hashicorp/kubernetes"
       version = "2.38.0"
+    }
+    local = {
+      source  = "hashicorp/local"
+      version = "2.3.0"
     }
   }
 }
@@ -94,6 +96,7 @@ resource "oci_core_route_table" "oke_route_table" {
   compartment_id = var.compartment_ocid
   vcn_id         = oci_core_vcn.oke_vcn.id
   display_name   = "oke_poc_route_table"
+
   route_rules {
     destination       = "0.0.0.0/0"
     destination_type  = "CIDR_BLOCK"
@@ -171,18 +174,19 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
 }
 
 # -----------------------------------------------------------------------------
-# Kubernetes Provider Configuration
+# Kubernetes Provider Configuration via Local File
 # -----------------------------------------------------------------------------
-
-# This data source fetches the kubeconfig file content after the cluster is created.
 data "oci_containerengine_cluster_kube_config" "kube_config" {
   cluster_id = oci_containerengine_cluster.oke_cluster.id
 }
 
-# This is the correct and modern way to configure the Kubernetes provider.
-# It uses the entire kubeconfig content fetched by the data source.
+resource "local_file" "kubeconfig" {
+  content  = data.oci_containerengine_cluster_kube_config.kube_config.content
+  filename = "${path.module}/oke_kubeconfig.yaml"
+}
+
 provider "kubernetes" {
-  kubeconfig = data.oci_containerengine_cluster_kube_config.kube_config.content
+  config_path = local_file.kubeconfig.filename
 }
 
 # -----------------------------------------------------------------------------
@@ -218,11 +222,13 @@ resource "kubernetes_role_binding" "cicd_rb" {
     name      = "deployer-binding"
     namespace = kubernetes_namespace.app_ns.metadata[0].name
   }
+
   role_ref {
     api_group = "rbac.authorization.k8s.io"
     kind      = "Role"
     name      = kubernetes_role.cicd_role.metadata[0].name
   }
+
   subject {
     kind      = "ServiceAccount"
     name      = kubernetes_service_account.cicd_sa.metadata[0].name
@@ -247,7 +253,7 @@ output "application_namespace" {
   value       = kubernetes_namespace.app_ns.metadata[0].name
 }
 
-output "kubeconfig_command" {
-  description = "Run this command to get the kubeconfig file for local testing."
-  value       = "oci ce cluster create-kubeconfig --cluster-id ${oci_containerengine_cluster.oke_cluster.id} --file $HOME/.kube/config --region ${var.region} --token-version 2.0.0"
+output "kubeconfig_file" {
+  description = "Path to the generated kubeconfig file."
+  value       = local_file.kubeconfig.filename
 }
