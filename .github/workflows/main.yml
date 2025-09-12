@@ -37,7 +37,6 @@ jobs:
           terraform init \
             -backend-config="bucket=${{ secrets.OCI_STATE_BUCKET }}" \
             -backend-config="key=oke-cluster/terraform.tfstate" \
-            -backend-config="compartment_id=${{ secrets.OCI_COMPARTMENT_OCID }}" \
             -backend-config="region=${{ secrets.OCI_REGION }}"
 
       # The 'terraform apply' step uses TF_VAR_ environment variables to pass values
