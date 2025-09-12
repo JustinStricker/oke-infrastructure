@@ -68,7 +68,7 @@ variable "region" {
 variable "k8s_version" {
   description = "The version of Kubernetes to deploy."
   type        = string
-  default     = "v1.29.1"
+  default     = "v1.33.1"
 }
 
 variable "node_image_ocid" {
