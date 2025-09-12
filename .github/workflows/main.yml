@@ -1,77 +1,46 @@
-name: Build and Deploy to OKE
+name: 'Terraform Apply OKE Cluster'
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
 
 jobs:
-  build-and-deploy:
+  terraform:
+    name: 'Terraform'
     runs-on: ubuntu-latest
-    # Your exact original environment variables
-    env:
-      OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
-      OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
-      OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-      OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}
-      OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
-      TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
-      TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
-      TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
-      TF_VAR_region: ${{ secrets.OCI_REGION }}
-      TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
-      TF_VAR_node_image_ocid: ${{ secrets.OCI_NODE_IMAGE_OCID }}
-
-    # Your exact original steps for the build phase
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v3
+      # Step 1: Check out your repository's Terraform code
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Get or create an OCIR Repository
-        id: get-ocir-repository
-        uses: oracle-actions/get-ocir-repository@v1.3.0
-        with:
-          name: ktor-oke-app
-          compartment: ${{ secrets.OCI_COMPARTMENT_OCID }}
-
-      - name: Log into OCIR
-        uses: oracle-actions/login-ocir@v1.3.0
-        id: login-ocir
-        with:
-          auth_token: ${{ secrets.OCI_AUTH_TOKEN }}
-
-      - name: Build with Gradle
-        uses: gradle/gradle-build-action@v2
-        with:
-          gradle-version: '8.5'
-          arguments: shadowJar
-
-      - name: Build and Push Docker Image
-        id: build-image
-        run: |
-          IMAGE_TAG=$GITHUB_SHA
-          IMAGE_URL="${{ steps.get-ocir-repository.outputs.repo_path }}:$IMAGE_TAG"
-          docker build -t $IMAGE_URL .
-          docker push $IMAGE_URL
-          echo "image_url=$IMAGE_URL" >> $GITHUB_OUTPUT
-
-      # Your exact original steps for the Terraform setup phase
+      # Step 2: Install the Terraform CLI
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
+        uses: hashicorp/setup-terraform@v3
 
-      - name: Write OCI private key to file
-        run: |
-          echo "${{ secrets.OCI_PRIVATE_KEY }}" > oci_api_key.pem
-          echo "TF_VAR_private_key_path=$(pwd)/oci_api_key.pem" >> $GITHUB_ENV
+      # Step 3: Create a temporary file on the runner for the private key.
+      # This reads the key content from the secret and writes it to a file,
+      # allowing us to pass its path to the `private_key_path` variable.
+      - name: Create OCI private key file
+        run: echo "${{ secrets.OCI_PRIVATE_KEY }}" > /tmp/oci_api_key.pem
 
-      - name: Validate private key format
-        run: openssl rsa -in oci_api_key.pem -check
-
+      # Step 4: Run Terraform Init to prepare the environment
       - name: Terraform Init
+        id: init
         run: terraform init
 
-      # The simplified, single apply step.
+      # Step 5: Run Terraform Apply
+      # This step securely passes the GitHub Secrets as environment variables.
+      # Terraform automatically uses environment variables prefixed with `TF_VAR_`
+      # to populate the corresponding variables in your .tf file.
       - name: Terraform Apply
-        run: |
-          terraform apply -auto-approve \
-            -var="docker_image=${{ steps.build-image.outputs.image_url }}" \
-            -var="tenancy_namespace=${{ steps.get-ocir-repository.outputs.namespace }}"
+        id: apply
+        env:
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          TF_VAR_private_key_path: /tmp/oci_api_key.pem
+          TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          # The 'region' and 'k8s_version' variables will use their default values from main.tf
+        run: terraform apply -auto-approve
+
