@@ -1,10 +1,20 @@
-# FILE: main.tf (Corrected and Aligned with Documentation)
+# FILE: main.tf (Corrected)
 
 terraform {
-  # This backend block is now explicitly defined. The actual values for these
-  # arguments will be provided by the '-backend-config' flags in the
-  # GitHub Actions workflow, as specified in the HashiCorp documentation.
   backend "oci" {}
+
+  required_providers {
+    oci = {
+      source  = "oracle/oci"
+      version = "7.17.0"
+    }
+    # --- FIX WAS APPLIED HERE ---
+    # Corrected the source from "hashcorp" to "hashicorp".
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "2.38.0"
+    }
+  }
 }
 
 provider "oci" {
@@ -14,8 +24,6 @@ provider "oci" {
   private_key_path = var.private_key_path
   region           = var.region
 }
-
-# (The rest of your fully corrected Terraform code follows)
 
 # -----------------------------------------------------------------------------
 # Variable Definitions
@@ -165,10 +173,14 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
 # -----------------------------------------------------------------------------
 # Kubernetes Provider Configuration
 # -----------------------------------------------------------------------------
+
+# This data source fetches the kubeconfig file content after the cluster is created.
 data "oci_containerengine_cluster_kube_config" "kube_config" {
   cluster_id = oci_containerengine_cluster.oke_cluster.id
 }
 
+# This is the correct and modern way to configure the Kubernetes provider.
+# It uses the entire kubeconfig content fetched by the data source.
 provider "kubernetes" {
   kubeconfig = data.oci_containerengine_cluster_kube_config.kube_config.content
 }
