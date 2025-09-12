@@ -1,9 +1,9 @@
-# OKE Cluster with Integrated Kubernetes RBAC for CI/CD
-
-# -----------------------------------------------------------------------------
-# Provider Configuration & Variables
-# -----------------------------------------------------------------------------
 terraform {
+  # This block tells Terraform to use the native OCI remote backend.
+  # The specific details (bucket, region, etc.) will be provided by the
+  # -backend-config flags in the GitHub Actions workflow during the 'terraform init' step.
+  backend "oci" {}
+
   required_providers {
     oci = {
       source  = "oracle/oci"
@@ -24,6 +24,9 @@ provider "oci" {
   region           = var.region
 }
 
+# -----------------------------------------------------------------------------
+# Variable Definitions
+# -----------------------------------------------------------------------------
 variable "tenancy_ocid" {
   description = "The OCID of the tenancy."
   type        = string
@@ -62,7 +65,7 @@ variable "region" {
 variable "k8s_version" {
   description = "The version of Kubernetes to deploy."
   type        = string
-  default     = "v1.29.1" # Updated to a more recent version
+  default     = "v1.29.1"
 }
 
 variable "node_image_ocid" {
@@ -74,7 +77,6 @@ variable "node_image_ocid" {
 # -----------------------------------------------------------------------------
 # Networking Resources
 # -----------------------------------------------------------------------------
-
 resource "oci_core_vcn" "oke_vcn" {
   compartment_id = var.compartment_ocid
   display_name   = "oke_poc_vcn"
@@ -117,9 +119,8 @@ resource "oci_core_subnet" "oke_nodes_subnet" {
 }
 
 # -----------------------------------------------------------------------------
-# OKE Cluster Resources
+# OKE Cluster Resources (Free Tier)
 # -----------------------------------------------------------------------------
-
 resource "oci_containerengine_cluster" "oke_cluster" {
   compartment_id     = var.compartment_ocid
   kubernetes_version = var.k8s_version
@@ -142,16 +143,15 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
   compartment_id     = var.compartment_ocid
   kubernetes_version = var.k8s_version
   name               = "poc-free-tier-pool"
-  # Using the Always Free Ampere A1 (Arm-based) shape.
-  node_shape         = "VM.Standard.A1.Flex"
+  node_shape         = "VM.Standard.A1.Flex" # Always Free Ampere A1 (Arm-based) shape
 
-  # --- MODIFIED FOR 4 NODES ---
-  # Configured to stay within the Always Free limits (4 OCPUs and 24GB RAM total).
-  # This creates 4 nodes, each with 1 OCPU and 6GB of RAM.
+  # Configured for 4 nodes, each with 1 OCPU and 6GB of RAM,
+  # staying within the Always Free limits (4 OCPUs and 24GB RAM total).
   node_shape_config {
     memory_in_gbs = 6
     ocpus         = 1
   }
+
   dynamic "source_details" {
     for_each = var.node_image_ocid != null ? [1] : []
     content {
@@ -159,21 +159,19 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
       source_type = "image"
     }
   }
+
   node_config_details {
     placement_configs {
       availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
       subnet_id           = oci_core_subnet.oke_nodes_subnet.id
     }
-    # --- MODIFIED FOR 4 NODES ---
-    # Changed the number of nodes from 2 to 4.
-    size = 4
+    size = 4 # Total number of worker nodes
   }
 }
 
 # -----------------------------------------------------------------------------
 # Kubernetes RBAC for CI/CD Pipeline
 # -----------------------------------------------------------------------------
-
 provider "kubernetes" {
   host                   = oci_containerengine_cluster.oke_cluster.endpoints[0].public_endpoint
   cluster_ca_certificate = base64decode(oci_containerengine_cluster.oke_cluster.endpoints[0].cluster_ca_certificate)
@@ -229,7 +227,6 @@ resource "kubernetes_role_binding" "cicd_rb" {
 # -----------------------------------------------------------------------------
 # Data Source and Outputs
 # -----------------------------------------------------------------------------
-
 data "oci_identity_availability_domains" "ads" {
   compartment_id = var.compartment_ocid
 }
