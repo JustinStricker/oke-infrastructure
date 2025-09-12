@@ -8,8 +8,7 @@ terraform {
   }
 }
 
-# Provider configuration reverted to simple block.
-# Assumes authentication is handled outside of this file (e.g., environment variables).
+# Provider configuration assumes authentication is handled by environment variables.
 provider "oci" {}
 
 # --- Input Variables ---
@@ -19,10 +18,9 @@ variable "compartment_ocid" {
   type        = string
 }
 
-variable "kubernetes_version" {
-  description = "The version of Kubernetes to deploy for the OKE cluster."
+variable "tenancy_ocid" {
+  description = "The OCID of your tenancy (root compartment)."
   type        = string
-  default     = "v1.28.2" # Using a more current, stable version
 }
 
 # --- Networking Resources ---
@@ -30,21 +28,23 @@ variable "kubernetes_version" {
 resource "oci_core_vcn" "generated_oci_core_vcn" {
   cidr_block     = "10.0.0.0/16"
   compartment_id = var.compartment_ocid
-  display_name   = "oke-vcn-automated"
-  dns_label      = "okevcnauto"
+  display_name   = "oke-vcn-quick-oke-infrastructure-a8536cb57"
+  dns_label      = "okeinfrastructu"
 }
 
 resource "oci_core_internet_gateway" "generated_oci_core_internet_gateway" {
   compartment_id = var.compartment_ocid
-  display_name   = "oke-igw-automated"
+  display_name   = "oke-igw-quick-oke-infrastructure-a8536cb57"
   enabled        = true
   vcn_id         = oci_core_vcn.generated_oci_core_vcn.id
 }
 
 resource "oci_core_default_route_table" "generated_oci_core_default_route_table" {
   manage_default_resource_id = oci_core_vcn.generated_oci_core_vcn.default_route_table_id
+  display_name               = "oke-public-routetable-oke-infrastructure-a8536cb57"
 
   route_rules {
+    description       = "traffic to/from internet"
     destination       = "0.0.0.0/0"
     destination_type  = "CIDR_BLOCK"
     network_entity_id = oci_core_internet_gateway.generated_oci_core_internet_gateway.id
@@ -56,8 +56,8 @@ resource "oci_core_default_route_table" "generated_oci_core_default_route_table"
 resource "oci_core_subnet" "kubernetes_api_endpoint_subnet" {
   cidr_block                 = "10.0.0.0/28"
   compartment_id             = var.compartment_ocid
-  display_name               = "oke-k8s-api-subnet"
-  dns_label                  = "k8sapi"
+  display_name               = "oke-k8sApiEndpoint-subnet-quick-oke-infrastructure-a8536cb57-regional"
+  dns_label                  = "subce83bfcac"
   vcn_id                     = oci_core_vcn.generated_oci_core_vcn.id
   route_table_id             = oci_core_vcn.generated_oci_core_vcn.default_route_table_id
   security_list_ids          = [oci_core_security_list.kubernetes_api_endpoint_sec_list.id]
@@ -67,8 +67,8 @@ resource "oci_core_subnet" "kubernetes_api_endpoint_subnet" {
 resource "oci_core_subnet" "node_subnet" {
   cidr_block                 = "10.0.10.0/24"
   compartment_id             = var.compartment_ocid
-  display_name               = "oke-node-subnet"
-  dns_label                  = "nodes"
+  display_name               = "oke-nodesubnet-quick-oke-infrastructure-a8536cb57-regional"
+  dns_label                  = "subf53e889a4"
   vcn_id                     = oci_core_vcn.generated_oci_core_vcn.id
   route_table_id             = oci_core_vcn.generated_oci_core_vcn.default_route_table_id
   security_list_ids          = [oci_core_security_list.node_sec_list.id]
@@ -78,16 +78,15 @@ resource "oci_core_subnet" "node_subnet" {
 resource "oci_core_subnet" "service_lb_subnet" {
   cidr_block                 = "10.0.20.0/24"
   compartment_id             = var.compartment_ocid
-  display_name               = "oke-lb-subnet"
-  dns_label                  = "lbs"
+  display_name               = "oke-svclbsubnet-quick-oke-infrastructure-a8536cb57-regional"
+  dns_label                  = "lbsub671fac0f2"
   vcn_id                     = oci_core_vcn.generated_oci_core_vcn.id
   route_table_id             = oci_core_vcn.generated_oci_core_vcn.default_route_table_id
-  security_list_ids          = [oci_core_vcn.generated_oci_core_vcn.default_security_list_id] # Using default for simplicity, can be customized
+  security_list_ids          = [oci_core_vcn.generated_oci_core_vcn.default_security_list_id]
   prohibit_public_ip_on_vnic = false
 }
 
 # --- Security Lists ---
-# Reverted to the original, more detailed security list definitions.
 
 resource "oci_core_security_list" "node_sec_list" {
   compartment_id = var.compartment_ocid
@@ -245,34 +244,56 @@ resource "oci_core_security_list" "kubernetes_api_endpoint_sec_list" {
 
 resource "oci_containerengine_cluster" "generated_oci_containerengine_cluster" {
   compartment_id     = var.compartment_ocid
-  kubernetes_version = "v1.33.1" # Reverted to original version
-  name               = "oke-cluster-automated"
+  kubernetes_version = "v1.33.1"
+  name               = "oke-infrastructure"
   vcn_id             = oci_core_vcn.generated_oci_core_vcn.id
-  endpoint_config {
-    subnet_id            = oci_core_subnet.kubernetes_api_endpoint_subnet.id
-    is_public_ip_enabled = true
+  type               = "BASIC_CLUSTER"
+
+  cluster_pod_network_options {
+    cni_type = "OCI_VCN_IP_NATIVE"
   }
+
+  endpoint_config {
+    is_public_ip_enabled = true
+    subnet_id            = oci_core_subnet.kubernetes_api_endpoint_subnet.id
+  }
+
   options {
+    admission_controller_options {
+      is_pod_security_policy_enabled = false
+    }
+    persistent_volume_config {
+      freeform_tags = {
+        "OKEclusterName" = "oke-infrastructure"
+      }
+    }
+    service_lb_config {
+      freeform_tags = {
+        "OKEclusterName" = "oke-infrastructure"
+      }
+    }
     service_lb_subnet_ids = [oci_core_subnet.service_lb_subnet.id]
   }
 }
 
-resource "oci_containerengine_node_pool" "node_pool" {
+resource "oci_containerengine_node_pool" "create_node_pool_details0" {
   cluster_id         = oci_containerengine_cluster.generated_oci_containerengine_cluster.id
   compartment_id     = var.compartment_ocid
-  kubernetes_version = "v1.33.1" # Reverted to original version
-  name               = "nodepool1"
+  kubernetes_version = "v1.33.1"
+  name               = "pool1"
   node_shape         = "VM.Standard.A1.Flex"
-  node_shape_config {
-    memory_in_gbs = 6
-    ocpus         = 1
+
+  freeform_tags = {
+    "OKEnodePoolName" = "pool1"
   }
-  node_source_details {
-    image_id    = "ocid1.image.oc1.iad.aaaaaaaawvjqjuetmdkenuoqttvmyfsb22l7qoq4sru3u6z2dfoog4yryuea" # Example Image OCID, consider using a variable
-    source_type = "IMAGE"
+
+  initial_node_labels {
+    key   = "name"
+    value = "oke-infrastructure"
   }
+
   node_config_details {
-    size = 2 # Starting with a smaller node count
+    size = 4
     placement_configs {
       availability_domain = "SpPm:US-ASHBURN-AD-1"
       subnet_id           = oci_core_subnet.node_subnet.id
@@ -285,5 +306,45 @@ resource "oci_containerengine_node_pool" "node_pool" {
       availability_domain = "SpPm:US-ASHBURN-AD-3"
       subnet_id           = oci_core_subnet.node_subnet.id
     }
+    freeform_tags = {
+      "OKEnodePoolName" = "pool1"
+    }
+    node_pool_pod_network_option_details {
+      cni_type = "OCI_VCN_IP_NATIVE"
+    }
   }
+
+  node_eviction_node_pool_settings {
+    eviction_grace_duration = "PT60M"
+  }
+
+  node_shape_config {
+    memory_in_gbs = 6
+    ocpus         = 1
+  }
+
+  node_source_details {
+    image_id    = "ocid1.image.oc1.iad.aaaaaaaawvjqjuetmdkenuoqttvmyfsb22l7qoq4sru3u6z2dfoog4yryuea"
+    source_type = "IMAGE"
+  }
+}
+
+# --- IAM Resources for OCIR Access ---
+
+resource "oci_identity_dynamic_group" "oke_nodes_dynamic_group" {
+  provider       = oci
+  compartment_id = var.tenancy_ocid
+  name           = "oke_nodes_dynamic_group_tf"
+  description    = "Dynamic group for all OKE worker nodes in a compartment, managed by Terraform."
+  matching_rule  = "ALL {instance.compartment.id = '${var.compartment_ocid}'}"
+}
+
+resource "oci_identity_policy" "oke_nodes_ocir_policy" {
+  provider       = oci
+  compartment_id = var.tenancy_ocid
+  name           = "oke_nodes_ocir_policy_tf"
+  description    = "Policy to allow OKE worker nodes to pull images from OCIR, managed by Terraform."
+  statements = [
+    "Allow dynamic-group ${oci_identity_dynamic_group.oke_nodes_dynamic_group.name} to read repos in compartment id ${var.compartment_ocid}"
+  ]
 }
