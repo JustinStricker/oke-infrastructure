@@ -1,3 +1,5 @@
+# FILE: main.tf (Corrected)
+
 terraform {
   # This block tells Terraform to use the native OCI remote backend.
   # The specific details (bucket, region, etc.) will be provided by the
@@ -126,20 +128,26 @@ resource "oci_containerengine_cluster" "oke_cluster" {
   kubernetes_version = var.k8s_version
   name               = "poc-cluster"
   vcn_id             = oci_core_vcn.oke_vcn.id
+
+  # --- FIX WAS APPLIED HERE ---
+  # The 'endpoint_config' block was moved out of the 'options' block
+  # and is now a top-level argument for the resource, which is the correct syntax.
+  
+  endpoint_config {
+    subnet_id            = oci_core_subnet.oke_api_subnet.id
+    is_public_ip_enabled = true
+  }
+
   options {
     kubernetes_network_config {
       pods_cidr     = "10.244.0.0/16"
       services_cidr = "10.96.0.0/16"
     }
-    endpoint_config {
-      subnet_id            = oci_core_subnet.oke_api_subnet.id
-      is_public_ip_enabled = true
-    }
   }
 }
 
 resource "oci_containerengine_node_pool" "oke_node_pool" {
-  cluster_id         = oci_containerengine_cluster.oke_cluster.id
+  cluster_.id         = oci_containerengine_cluster.oke_cluster.id
   compartment_id     = var.compartment_ocid
   kubernetes_version = var.k8s_version
   name               = "poc-free-tier-pool"
