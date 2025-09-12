@@ -1,18 +1,10 @@
-# FILE: main.tf (Corrected)
+# FILE: main.tf (Corrected and Aligned with Documentation)
 
 terraform {
+  # This backend block is now explicitly defined. The actual values for these
+  # arguments will be provided by the '-backend-config' flags in the
+  # GitHub Actions workflow, as specified in the HashiCorp documentation.
   backend "oci" {}
-
-  required_providers {
-    oci = {
-      source  = "oracle/oci"
-      version = "7.17.0"
-    }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "2.38.0"
-    }
-  }
 }
 
 provider "oci" {
@@ -23,8 +15,8 @@ provider "oci" {
   region           = var.region
 }
 
-# (Variable definitions remain the same - omitted for brevity)
-# ...
+# (The rest of your fully corrected Terraform code follows)
+
 # -----------------------------------------------------------------------------
 # Variable Definitions
 # -----------------------------------------------------------------------------
@@ -74,8 +66,7 @@ variable "node_image_ocid" {
   type        = string
   default     = null
 }
-# (Networking resources remain the same - omitted for brevity)
-# ...
+
 # -----------------------------------------------------------------------------
 # Networking Resources
 # -----------------------------------------------------------------------------
@@ -147,7 +138,7 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
   compartment_id     = var.compartment_ocid
   kubernetes_version = var.k8s_version
   name               = "poc-free-tier-pool"
-  node_shape         = "VM.Standard.A1.Flex" 
+  node_shape         = "VM.Standard.A1.Flex"
 
   node_shape_config {
     memory_in_gbs = 6
@@ -167,27 +158,24 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
       availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
       subnet_id           = oci_core_subnet.oke_nodes_subnet.id
     }
-    size = 4 
+    size = 4
   }
 }
 
-# --- FIX #1 WAS APPLIED HERE ---
-# Added a data source to fetch the cluster's kubeconfig details after it is created.
+# -----------------------------------------------------------------------------
+# Kubernetes Provider Configuration
+# -----------------------------------------------------------------------------
 data "oci_containerengine_cluster_kube_config" "kube_config" {
   cluster_id = oci_containerengine_cluster.oke_cluster.id
+}
+
+provider "kubernetes" {
+  kubeconfig = data.oci_containerengine_cluster_kube_config.kube_config.content
 }
 
 # -----------------------------------------------------------------------------
 # Kubernetes RBAC for CI/CD Pipeline
 # -----------------------------------------------------------------------------
-provider "kubernetes" {
-  # --- FIX #2 WAS APPLIED HERE ---
-  # The provider now uses the data source for its configuration.
-  host                   = data.oci_containerengine_cluster_kube_config.kube_config.endpoint
-  token                  = data.oci_containerengine_cluster_kube_config.kube_config.token
-  cluster_ca_certificate = base64decode(data.oci_containerengine_cluster_kube_config.kube_config.cluster_ca_certificate)
-}
-
 resource "kubernetes_namespace" "app_ns" {
   metadata {
     name = "ktor-app"
