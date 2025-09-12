@@ -20,7 +20,7 @@ jobs:
       # that both the backend and the provider can use for authentication.
       - name: 'Write OCI private key to file'
         run: |
-          echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > /tmp/oci_api_key.pem
+          echo "${{ secrets.OCI_PRIVATE_KEY }}" > /tmp/oci_api_key.pem
           chmod 600 /tmp/oci_api_key.pem
 
       # The 'terraform init' step uses OCI CLI environment variables for authentication
@@ -28,9 +28,9 @@ jobs:
       - name: 'Terraform Init'
         id: init
         env:
-          OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
-          OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
-          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
+          OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
+          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
           OCI_CLI_KEY_FILE: /tmp/oci_api_key.pem
           OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
         run: |
@@ -45,10 +45,11 @@ jobs:
       - name: 'Terraform Apply'
         id: apply
         env:
-          TF_VAR_tenancy_ocid: ${{ secrets.OCI_CLI_TENANCY }}
-          TF_VAR_user_ocid: ${{ secrets.OCI_CLI_USER }}
-          TF_VAR_fingerprint: ${{ secrets.OCI_CLI_FINGERPRINT }}
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
           TF_VAR_private_key_path: /tmp/oci_api_key.pem
           TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
           TF_VAR_region: ${{ secrets.OCI_REGION }}
+          TF_VAR_node_image_ocid: ${{ secrets.OCI_NODE_IMAGE_OCID }}
         run: terraform apply -auto-approve
