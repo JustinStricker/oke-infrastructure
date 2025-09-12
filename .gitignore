@@ -1,21 +1,32 @@
-Gradle
-build/
-.gradle/
-*.jar
-*.war
-
-Terraform
-.terraform/
+Local Terraform state files
 *.tfstate
-.tfstate.
+*.tfstate.backup
+
+.terraform directory which contains providers and modules
+.terraform/
+
+Crash log files
 crash.log
+crash.*.log
+
+Terraform plan files
+*.tfplan
+
+Infracost files
+.infracost/
+*.infracost.json
+
+Terraform variable definition files
+These often contain sensitive information.
+If you need to version your variables, consider a ".tfvars.example" file.
 *.tfvars
+*.tfvars.json
 
-IDEs
-.idea/
-*.iml
-.vscode/
+OCI credentials and private keys
+The GitHub Action workflow creates this file from a secret.
+private_key.pem
+*.pem
 
-OS
+IDE / OS generated files
 .DS_Store
-Thumbs.db
+.vscode/
