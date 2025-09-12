@@ -1,4 +1,4 @@
-name: 'Terraform Apply OKE Cluster'
+name: 'Deploy OKE Infrastructure'
 
 on:
   push:
@@ -10,37 +10,45 @@ jobs:
     name: 'Terraform'
     runs-on: ubuntu-latest
     steps:
-      # Step 1: Check out your repository's Terraform code
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: 'Checkout code'
+        uses: actions/checkout@v3
 
-      # Step 2: Install the Terraform CLI
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
+      - name: 'Set up Terraform'
+        uses: hashicorp/setup-terraform@v2
 
-      # Step 3: Create a temporary file on the runner for the private key.
-      # This reads the key content from the secret and writes it to a file,
-      # allowing us to pass its path to the `private_key_path` variable.
-      - name: Create OCI private key file
-        run: echo "${{ secrets.OCI_PRIVATE_KEY }}" > /tmp/oci_api_key.pem
+      # This step securely writes the private key from secrets to a temporary file
+      # that both the backend and the provider can use for authentication.
+      - name: 'Write OCI private key to file'
+        run: |
+          echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > /tmp/oci_api_key.pem
+          chmod 600 /tmp/oci_api_key.pem
 
-      # Step 4: Run Terraform Init to prepare the environment
-      - name: Terraform Init
+      # The 'terraform init' step uses OCI CLI environment variables for authentication
+      # to connect to the remote state bucket.
+      - name: 'Terraform Init'
         id: init
-        run: terraform init
+        env:
+          OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
+          OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
+          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
+          OCI_CLI_KEY_FILE: /tmp/oci_api_key.pem
+          OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.OCI_STATE_BUCKET }}" \
+            -backend-config="key=oke-cluster/terraform.tfstate" \
+            -backend-config="compartment_id=${{ secrets.OCI_COMPARTMENT_OCID }}" \
+            -backend-config="region=${{ secrets.OCI_REGION }}"
 
-      # Step 5: Run Terraform Apply
-      # This step securely passes the GitHub Secrets as environment variables.
-      # Terraform automatically uses environment variables prefixed with `TF_VAR_`
-      # to populate the corresponding variables in your .tf file.
-      - name: Terraform Apply
+      # The 'terraform apply' step uses TF_VAR_ environment variables to pass values
+      # to the variables defined in your main.tf file.
+      - name: 'Terraform Apply'
         id: apply
         env:
-          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
-          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
-          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_CLI_TENANCY }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_CLI_USER }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_CLI_FINGERPRINT }}
           TF_VAR_private_key_path: /tmp/oci_api_key.pem
           TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
-          # The 'region' and 'k8s_version' variables will use their default values from main.tf
+          TF_VAR_region: ${{ secrets.OCI_REGION }}
         run: terraform apply -auto-approve
-
