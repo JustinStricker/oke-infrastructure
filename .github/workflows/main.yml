@@ -3,46 +3,59 @@ name: 'Terraform OKE Deployment'
 on:
   push:
     branches:
-      - main
-  pull_request:
+      - main # Triggers on push to the main branch
+  pull_request: # Triggers on pull requests targeting main
 
 jobs:
   terraform:
     name: 'Terraform'
     runs-on: ubuntu-latest
     env:
-      # Configure OCI provider credentials via environment variables
+      # Credentials for OCI Provider Authentication
       OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
-      OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
-      OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
-      OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-      OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
-      OCI_REGION: ${{ secrets.OCI_REGION }}
+      OCI_TENANCY_OCID:     ${{ secrets.OCI_TENANCY_OCID }} # Added for IAM resources
+      OCI_USER_OCID:        ${{ secrets.OCI_USER_OCID }}
+      OCI_FINGERPRINT:      ${{ secrets.OCI_FINGERPRINT }}
+      OCI_PRIVATE_KEY:      ${{ secrets.OCI_PRIVATE_KEY }}
+      OCI_REGION:           ${{ secrets.OCI_REGION }}
 
-      # Pass the compartment OCID as a Terraform variable
+      # Pass values to Terraform Input Variables
       TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+      TF_VAR_tenancy_ocid:     ${{ secrets.OCI_TENANCY_OCID }} # Added for IAM resources
 
     steps:
+      # 1. Checkout your repository code
       - name: Checkout
         uses: actions/checkout@v4
 
+      # 2. Setup Terraform CLI
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
+      # 3. Initialize Terraform
+      #    Terraform downloads the OCI provider and sets up the backend.
       - name: Terraform Init
         id: init
         run: terraform init
 
-      - name: Terraform Format
+      # 4. Check if the code is formatted correctly
+      - name: Terraform Format Check
+        id: fmt
         run: terraform fmt -check
 
+      # 5. Validate the Terraform configuration
       - name: Terraform Validate
-        run: terraform validate
+        id: validate
+        run: terraform validate -no-color
 
+      # 6. Generate a Terraform Plan
+      #    A plan is created for all pushes, including on pull requests.
       - name: Terraform Plan
         id: plan
         run: terraform plan -no-color
 
+      # 7. Apply the plan ONLY on the main branch
+      #    This step runs only when code is pushed to the main branch.
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: terraform apply -auto-approve
+        run: terraform apply -auto-approve -no-color
