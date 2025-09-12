@@ -1,51 +1,61 @@
-# FILE: .github/workflows/deploy-oke.yml
-
-name: 'Deploy OKE Infrastructure'
+# .github/workflows/main.yml
+name: 'Deploy OKE Cluster with Terraform'
 
 on:
   push:
     branches:
       - main
+  pull_request:
 
 jobs:
   terraform:
-    name: 'Terraform'
+    name: 'Terraform OKE Deployment'
     runs-on: ubuntu-latest
+    env:
+      # These environment variables are used by the Terraform OCI provider
+      TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+      TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+      TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+      TF_VAR_region: ${{ secrets.OCI_REGION }}
+      # We write the private key to a temporary file for Terraform to use
+      OCI_PRIVATE_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}
 
     steps:
-      - name: 'Checkout code'
-        uses: actions/checkout@v3
+      # 1. Checkout the repository code
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: 'Set up Terraform'
-        uses: hashicorp/setup-terraform@v2
+      # 2. Setup Terraform CLI
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0 # Specify a Terraform version
 
-      - name: 'Write OCI private key to file'
+      # 3. Create OCI Private Key File from Secret
+      - name: Create Private Key File
         run: |
-          echo "${{ secrets.OCI_PRIVATE_KEY }}" > /tmp/oci_api_key.pem
-          chmod 600 /tmp/oci_api_key.pem
+          echo "${{ secrets.OCI_PRIVATE_KEY }}" > private_key.pem
+          chmod 600 private_key.pem
 
-      - name: 'Terraform Init'
+      # 4. Initialize Terraform
+      # The compartment_ocid is passed as a command-line variable
+      - name: Terraform Init
         id: init
-        run: |
-          terraform init \
-            -backend-config="bucket=${{ secrets.OCI_STATE_BUCKET }}" \
-            -backend-config="namespace=${{ secrets.OCI_TENANCY_NAMESPACE }}" \
-            -backend-config="key=oke-cluster/terraform.tfstate" \
-            -backend-config="region=${{ secrets.OCI_REGION }}" \
-            -backend-config="tenancy_ocid=${{ secrets.OCI_TENANCY_OCID }}" \
-            -backend-config="user_ocid=${{ secrets.OCI_USER_OCID }}" \
-            -backend-config="fingerprint=${{ secrets.OCI_FINGERPRINT }}" \
-            -backend-config="private_key_path=/tmp/oci_api_key.pem"
+        run: terraform init -var="compartment_ocid=${{ secrets.OCI_COMPARTMENT_OCID }}" -var="private_key_path=private_key.pem"
 
-      - name: 'Terraform Apply'
-        id: apply
-        env:
-          TF_VAR_tenancy_ocid:     ${{ secrets.OCI_TENANCY_OCID }}
-          TF_VAR_user_ocid:        ${{ secrets.OCI_USER_OCID }}
-          TF_VAR_fingerprint:      ${{ secrets.OCI_FINGERPRINT }}
-          TF_VAR_private_key_path: /tmp/oci_api_key.pem
-          TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
-          TF_VAR_region:           ${{ secrets.OCI_REGION }}
-          TF_VAR_node_image_ocid:  ${{ secrets.OCI_NODE_IMAGE_OCID }}
-        run: terraform apply -auto-approve
+      # 5. Generate a Terraform Plan
+      # On pull requests, the workflow will stop here after showing the plan
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -no-color -var="compartment_ocid=${{ secrets.OCI_COMPARTMENT_OCID }}" -var="private_key_path=private_key.pem"
 
+      # 6. Apply the Terraform plan
+      # This step ONLY runs on a push to the 'main' branch
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: terraform apply -auto-approve -var="compartment_ocid=${{ secrets.OCI_COMPARTMENT_OCID }}" -var="private_key_path=private_key.pem"
+
+      # 7. Clean up the private key file
+      - name: Clean up private key
+        if: always() # This step always runs, even if previous steps fail
+        run: rm -f private_key.pem
