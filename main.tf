@@ -1,9 +1,6 @@
 # FILE: main.tf (Corrected)
 
 terraform {
-  # This block tells Terraform to use the native OCI remote backend.
-  # The specific details (bucket, region, etc.) will be provided by the
-  # -backend-config flags in the GitHub Actions workflow during the 'terraform init' step.
   backend "oci" {}
 
   required_providers {
@@ -26,6 +23,8 @@ provider "oci" {
   region           = var.region
 }
 
+# (Variable definitions remain the same - omitted for brevity)
+# ...
 # -----------------------------------------------------------------------------
 # Variable Definitions
 # -----------------------------------------------------------------------------
@@ -75,7 +74,8 @@ variable "node_image_ocid" {
   type        = string
   default     = null
 }
-
+# (Networking resources remain the same - omitted for brevity)
+# ...
 # -----------------------------------------------------------------------------
 # Networking Resources
 # -----------------------------------------------------------------------------
@@ -147,15 +147,13 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
   compartment_id     = var.compartment_ocid
   kubernetes_version = var.k8s_version
   name               = "poc-free-tier-pool"
-  node_shape         = "VM.Standard.A1.Flex" # Always Free Ampere A1 (Arm-based) shape
+  node_shape         = "VM.Standard.A1.Flex" 
 
   node_shape_config {
     memory_in_gbs = 6
     ocpus         = 1
   }
 
-  # --- FIX #1 WAS APPLIED HERE ---
-  # The dynamic block was renamed from "source_details" to "node_source_details".
   dynamic "node_source_details" {
     for_each = var.node_image_ocid != null ? [1] : []
     content {
@@ -169,26 +167,25 @@ resource "oci_containerengine_node_pool" "oke_node_pool" {
       availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
       subnet_id           = oci_core_subnet.oke_nodes_subnet.id
     }
-    size = 4 # Total number of worker nodes
+    size = 4 
   }
+}
+
+# --- FIX #1 WAS APPLIED HERE ---
+# Added a data source to fetch the cluster's kubeconfig details after it is created.
+data "oci_containerengine_cluster_kube_config" "kube_config" {
+  cluster_id = oci_containerengine_cluster.oke_cluster.id
 }
 
 # -----------------------------------------------------------------------------
 # Kubernetes RBAC for CI/CD Pipeline
 # -----------------------------------------------------------------------------
 provider "kubernetes" {
-  host = oci_containerengine_cluster.oke_cluster.endpoints[0].public_endpoint
-  
   # --- FIX #2 WAS APPLIED HERE ---
-  # The reference was corrected to get the CA certificate from the cluster
-  # resource directly, not from within the 'endpoints' object.
-  cluster_ca_certificate = base64decode(oci_containerengine_cluster.oke_cluster.cluster_ca_certificate)
-  
-  exec {
-    api_version = "client.authentication.k8s.io/v1beta1"
-    command     = "oci"
-    args        = ["ce", "cluster", "generate-token", "--cluster-id", oci_containerengine_cluster.oke_cluster.id]
-  }
+  # The provider now uses the data source for its configuration.
+  host                   = data.oci_containerengine_cluster_kube_config.kube_config.endpoint
+  token                  = data.oci_containerengine_cluster_kube_config.kube_config.token
+  cluster_ca_certificate = base64decode(data.oci_containerengine_cluster_kube_config.kube_config.cluster_ca_certificate)
 }
 
 resource "kubernetes_namespace" "app_ns" {
