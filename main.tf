@@ -1,328 +1,312 @@
-# FILE: main.tf
-
+# Terraform block to define provider requirements
 terraform {
-  backend "oci" {}
-
   required_providers {
     oci = {
       source  = "oracle/oci"
-      version = "7.17.0"
-    }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "2.38.0"
-    }
-    local = {
-      source  = "hashicorp/local"
-      version = "2.3.0"
+      version = ">= 5.0"
     }
   }
 }
 
-provider "oci" {
-  tenancy_ocid     = var.tenancy_ocid
-  user_ocid        = var.user_ocid
-  fingerprint      = var.fingerprint
-  private_key_path = var.private_key_path
-  region           = var.region
+# Provider configuration reverted to simple block.
+# Assumes authentication is handled outside of this file (e.g., environment variables).
+provider "oci" {}
+
+# --- Input Variables ---
+# Authentication variables have been removed as requested.
+
+variable "compartment_ocid" {
+  description = "The OCID of the compartment where resources will be created."
+  type        = string
 }
 
-# -----------------------------------------------------------------------------
-# Variable Definitions
-# -----------------------------------------------------------------------------
 variable "tenancy_ocid" {
-  description = "The OCID of the tenancy."
+  description = "The OCID of the OCI tenancy."
   type        = string
-  sensitive   = true
 }
 
 variable "user_ocid" {
-  description = "The OCID of the user for API authentication."
+  description = "The OCID of the OCI user for API authentication."
   type        = string
-  sensitive   = true
-}
-
-variable "fingerprint" {
-  description = "The fingerprint of the API key."
-  type        = string
-  sensitive   = true
 }
 
 variable "private_key_path" {
-  description = "The path to the OCI API private key file."
+  description = "The local path to the OCI API private key."
   type        = string
-  sensitive   = true
 }
 
-variable "compartment_ocid" {
-  description = "The OCID of the compartment to create resources in."
+variable "fingerprint" {
+  description = "The fingerprint of the OCI API public key."
   type        = string
 }
 
 variable "region" {
-  description = "The OCI region where resources will be created."
+  description = "The OCI region to deploy resources in."
   type        = string
-  default     = "us-ashburn-1"
 }
 
-variable "k8s_version" {
-  description = "The version of Kubernetes to deploy."
+variable "kubernetes_version" {
+  description = "The version of Kubernetes to deploy for the OKE cluster."
   type        = string
-  default     = "v1.33.1"
+  default     = "v1.28.2" # Using a more current, stable version
 }
 
-variable "node_image_ocid" {
-  description = "The OCID of the custom image to use for the worker nodes. If not provided, a default Oracle Linux image will be used."
-  type        = string
-  default     = null
-}
+# --- Networking Resources ---
 
-# -----------------------------------------------------------------------------
-# Networking Resources
-# -----------------------------------------------------------------------------
-resource "oci_core_vcn" "oke_vcn" {
-  compartment_id = var.compartment_ocid
-  display_name   = "oke_poc_vcn"
+resource "oci_core_vcn" "generated_oci_core_vcn" {
   cidr_block     = "10.0.0.0/16"
+  compartment_id = var.compartment_ocid
+  display_name   = "oke-vcn-automated"
+  dns_label      = "okevcnauto"
 }
 
-resource "oci_core_internet_gateway" "oke_igw" {
+resource "oci_core_internet_gateway" "generated_oci_core_internet_gateway" {
   compartment_id = var.compartment_ocid
-  vcn_id         = oci_core_vcn.oke_vcn.id
-  display_name   = "oke_poc_igw"
+  display_name   = "oke-igw-automated"
+  enabled        = true
+  vcn_id         = oci_core_vcn.generated_oci_core_vcn.id
 }
 
-resource "oci_core_route_table" "oke_route_table" {
-  compartment_id = var.compartment_ocid
-  vcn_id         = oci_core_vcn.oke_vcn.id
-  display_name   = "oke_poc_route_table"
+resource "oci_core_default_route_table" "generated_oci_core_default_route_table" {
+  manage_default_resource_id = oci_core_vcn.generated_oci_core_vcn.default_route_table_id
 
   route_rules {
     destination       = "0.0.0.0/0"
     destination_type  = "CIDR_BLOCK"
-    network_entity_id = oci_core_internet_gateway.oke_igw.id
+    network_entity_id = oci_core_internet_gateway.generated_oci_core_internet_gateway.id
   }
 }
 
-resource "oci_core_subnet" "oke_api_subnet" {
-  compartment_id             = var.compartment_ocid
-  vcn_id                     = oci_core_vcn.oke_vcn.id
-  display_name               = "oke_api_subnet"
-  cidr_block                 = "10.0.1.0/24"
-  route_table_id             = oci_core_route_table.oke_route_table.id
-  prohibit_public_ip_on_vnic = false
+# --- Subnets ---
+
+resource "oci_core_subnet" "kubernetes_api_endpoint_subnet" {
+  cidr_block        = "10.0.0.0/28"
+  compartment_id    = var.compartment_ocid
+  display_name      = "oke-k8s-api-subnet"
+  dns_label         = "k8sapi"
+  vcn_id            = oci_core_vcn.generated_oci_core_vcn.id
+  route_table_id    = oci_core_vcn.generated_oci_core_vcn.default_route_table_id
+  security_list_ids = [oci_core_security_list.kubernetes_api_endpoint_sec_list.id]
 }
 
-resource "oci_core_subnet" "oke_nodes_subnet" {
-  compartment_id             = var.compartment_ocid
-  vcn_id                     = oci_core_vcn.oke_vcn.id
-  display_name               = "oke_nodes_subnet"
-  cidr_block                 = "10.0.2.0/24"
-  route_table_id             = oci_core_route_table.oke_route_table.id
-  prohibit_public_ip_on_vnic = false
+resource "oci_core_subnet" "node_subnet" {
+  cidr_block        = "10.0.10.0/24"
+  compartment_id    = var.compartment_ocid
+  display_name      = "oke-node-subnet"
+  dns_label         = "nodes"
+  vcn_id            = oci_core_vcn.generated_oci_core_vcn.id
+  route_table_id    = oci_core_vcn.generated_oci_core_vcn.default_route_table_id
+  security_list_ids = [oci_core_security_list.node_sec_list.id]
 }
 
-# -----------------------------------------------------------------------------
-# Network Security Groups (NSGs) for OKE
-# -----------------------------------------------------------------------------
-# These NSGs provide the necessary rules for the cluster to function.
-resource "oci_core_network_security_group" "api_endpoint_nsg" {
+resource "oci_core_subnet" "service_lb_subnet" {
+  cidr_block        = "10.0.20.0/24"
+  compartment_id    = var.compartment_ocid
+  display_name      = "oke-lb-subnet"
+  dns_label         = "lbs"
+  vcn_id            = oci_core_vcn.generated_oci_core_vcn.id
+  route_table_id    = oci_core_vcn.generated_oci_core_vcn.default_route_table_id
+  security_list_ids = [oci_core_vcn.generated_oci_core_vcn.default_security_list_id] # Using default for simplicity, can be customized
+}
+
+# --- Security Lists ---
+# Reverted to the original, more detailed security list definitions.
+
+resource "oci_core_security_list" "node_sec_list" {
   compartment_id = var.compartment_ocid
-  vcn_id         = oci_core_vcn.oke_vcn.id
-  display_name   = "oke_api_endpoint_nsg"
+  vcn_id         = oci_core_vcn.generated_oci_core_vcn.id
+  display_name   = "oke-nodeseclist-quick-oke-infrastructure-a8536cb57"
+
+  egress_security_rules {
+    description      = "Allow pods on one worker node to communicate with pods on other worker nodes"
+    destination      = "10.0.10.0/24"
+    destination_type = "CIDR_BLOCK"
+    protocol         = "all"
+    stateless        = "false"
+  }
+  egress_security_rules {
+    description      = "Access to Kubernetes API Endpoint"
+    destination      = "10.0.0.0/28"
+    destination_type = "CIDR_BLOCK"
+    protocol         = "6"
+    stateless        = "false"
+  }
+  egress_security_rules {
+    description      = "Kubernetes worker to control plane communication"
+    destination      = "10.0.0.0/28"
+    destination_type = "CIDR_BLOCK"
+    protocol         = "6"
+    stateless        = "false"
+  }
+  egress_security_rules {
+    description      = "Path discovery"
+    destination      = "10.0.0.0/28"
+    destination_type = "CIDR_BLOCK"
+    icmp_options {
+      code = "4"
+      type = "3"
+    }
+    protocol  = "1"
+    stateless = "false"
+  }
+  egress_security_rules {
+    description      = "Allow nodes to communicate with OKE to ensure correct start-up and continued functioning"
+    destination      = "all-iad-services-in-oracle-services-network"
+    destination_type = "SERVICE_CIDR_BLOCK"
+    protocol         = "6"
+    stateless        = "false"
+  }
+  egress_security_rules {
+    description      = "ICMP Access from Kubernetes Control Plane"
+    destination      = "0.0.0.0/0"
+    destination_type = "CIDR_BLOCK"
+    icmp_options {
+      code = "4"
+      type = "3"
+    }
+    protocol  = "1"
+    stateless = "false"
+  }
+  egress_security_rules {
+    description      = "Worker Nodes access to Internet"
+    destination      = "0.0.0.0/0"
+    destination_type = "CIDR_BLOCK"
+    protocol         = "all"
+    stateless        = "false"
+  }
+  ingress_security_rules {
+    description = "Allow pods on one worker node to communicate with pods on other worker nodes"
+    protocol    = "all"
+    source      = "10.0.10.0/24"
+    stateless   = "false"
+  }
+  ingress_security_rules {
+    description = "Path discovery"
+    icmp_options {
+      code = "4"
+      type = "3"
+    }
+    protocol  = "1"
+    source    = "10.0.0.0/28"
+    stateless = "false"
+  }
+  ingress_security_rules {
+    description = "TCP access from Kubernetes Control Plane"
+    protocol    = "6"
+    source      = "10.0.0.0/28"
+    stateless   = "false"
+  }
+  ingress_security_rules {
+    description = "Inbound SSH traffic to worker nodes"
+    protocol    = "6"
+    source      = "0.0.0.0/0"
+    stateless   = "false"
+  }
 }
 
-resource "oci_core_network_security_group" "worker_node_nsg" {
+resource "oci_core_security_list" "kubernetes_api_endpoint_sec_list" {
   compartment_id = var.compartment_ocid
-  vcn_id         = oci_core_vcn.oke_vcn.id
-  display_name   = "oke_worker_node_nsg"
-}
+  vcn_id         = oci_core_vcn.generated_oci_core_vcn.id
+  display_name   = "oke-k8sApiEndpoint-quick-oke-infrastructure-a8536cb57"
 
-# Rule to allow ingress to the API endpoint from the worker nodes
-resource "oci_core_network_security_group_security_rule" "api_ingress_rule" {
-  network_security_group_id = oci_core_network_security_group.api_endpoint_nsg.id
-  direction                 = "INGRESS"
-  protocol                  = "6"  # TCP
-  source                    = oci_core_subnet.oke_nodes_subnet.cidr_block
-  source_type               = "CIDR_BLOCK"
-  stateless                 = false
-  tcp_options {
-    destination_port_range {
-      max = 6443
-      min = 6443
+  egress_security_rules {
+    description      = "Allow Kubernetes Control Plane to communicate with OKE"
+    destination      = "all-iad-services-in-oracle-services-network"
+    destination_type = "SERVICE_CIDR_BLOCK"
+    protocol         = "6"
+    stateless        = "false"
+  }
+  egress_security_rules {
+    description      = "All traffic to worker nodes"
+    destination      = "10.0.10.0/24"
+    destination_type = "CIDR_BLOCK"
+    protocol         = "6"
+    stateless        = "false"
+  }
+  egress_security_rules {
+    description      = "Path discovery"
+    destination      = "10.0.10.0/24"
+    destination_type = "CIDR_BLOCK"
+    icmp_options {
+      code = "4"
+      type = "3"
     }
+    protocol  = "1"
+    stateless = "false"
+  }
+  ingress_security_rules {
+    description = "External access to Kubernetes API endpoint"
+    protocol    = "6"
+    source      = "0.0.0.0/0"
+    stateless   = "false"
+  }
+  ingress_security_rules {
+    description = "Kubernetes worker to Kubernetes API endpoint communication"
+    protocol    = "6"
+    source      = "10.0.10.0/24"
+    stateless   = "false"
+  }
+  ingress_security_rules {
+    description = "Kubernetes worker to control plane communication"
+    protocol    = "6"
+    source      = "10.0.10.0/24"
+    stateless   = "false"
+  }
+  ingress_security_rules {
+    description = "Path discovery"
+    icmp_options {
+      code = "4"
+      type = "3"
+    }
+    protocol  = "1"
+    source    = "10.0.10.0/24"
+    stateless = "false"
   }
 }
 
-# Rule to allow communication between worker nodes
-resource "oci_core_network_security_group_security_rule" "node_ingress_rules" {
-  network_security_group_id = oci_core_network_security_group.worker_node_nsg.id
-  direction                 = "INGRESS"
-  protocol                  = "all"
-  source                    = oci_core_subnet.oke_nodes_subnet.cidr_block
-  source_type               = "CIDR_BLOCK"
-  stateless                 = false
-}
+# --- OKE Cluster Resources ---
 
-# Rules to allow worker nodes to communicate with the API endpoint and the internet
-resource "oci_core_network_security_group_security_rule" "node_egress_to_api" {
-  network_security_group_id = oci_core_network_security_group.worker_node_nsg.id
-  direction                 = "EGRESS"
-  protocol                  = "6" # TCP
-  destination               = oci_core_subnet.oke_api_subnet.cidr_block
-  destination_type          = "CIDR_BLOCK"
-  stateless                 = false
-  tcp_options {
-    destination_port_range {
-      max = 6443
-      min = 6443
-    }
-  }
-}
-
-resource "oci_core_network_security_group_security_rule" "node_egress_to_internet" {
-  network_security_group_id = oci_core_network_security_group.worker_node_nsg.id
-  direction                 = "EGRESS"
-  protocol                  = "all"
-  destination               = "0.0.0.0/0"
-  destination_type          = "CIDR_BLOCK"
-  stateless                 = false
-}
-
-# -----------------------------------------------------------------------------
-# OKE Cluster Resources (Free Tier)
-# -----------------------------------------------------------------------------
-resource "oci_containerengine_cluster" "oke_cluster" {
+resource "oci_containerengine_cluster" "generated_oci_containerengine_cluster" {
   compartment_id     = var.compartment_ocid
-  kubernetes_version = var.k8s_version
-  name               = "poc-cluster"
-  vcn_id             = oci_core_vcn.oke_vcn.id
-
+  kubernetes_version = "v1.33.1" # Reverted to original version
+  name               = "oke-cluster-automated"
+  vcn_id             = oci_core_vcn.generated_oci_core_vcn.id
   endpoint_config {
-    subnet_id            = oci_core_subnet.oke_api_subnet.id
+    subnet_id            = oci_core_subnet.kubernetes_api_endpoint_subnet.id
     is_public_ip_enabled = true
-    nsg_ids              = [oci_core_network_security_group.api_endpoint_nsg.id]
   }
-
   options {
-    kubernetes_network_config {
-      pods_cidr    = "10.244.0.0/16"
-      services_cidr = "10.96.0.0/16"
-    }
+    service_lb_subnet_ids = [oci_core_subnet.service_lb_subnet.id]
   }
 }
 
-resource "oci_containerengine_node_pool" "oke_node_pool" {
-  cluster_id         = oci_containerengine_cluster.oke_cluster.id
+resource "oci_containerengine_node_pool" "node_pool" {
+  cluster_id         = oci_containerengine_cluster.generated_oci_containerengine_cluster.id
   compartment_id     = var.compartment_ocid
-  kubernetes_version = var.k8s_version
-  name               = "poc-free-tier-pool"
+  kubernetes_version = "v1.33.1" # Reverted to original version
+  name               = "nodepool1"
   node_shape         = "VM.Standard.A1.Flex"
-
   node_shape_config {
     memory_in_gbs = 6
     ocpus         = 1
   }
-
-  dynamic "node_source_details" {
-    for_each = var.node_image_ocid != null ? [1] : []
-    content {
-      image_id    = var.node_image_ocid
-      source_type = "image"
-    }
+  node_source_details {
+    image_id    = "ocid1.image.oc1.iad.aaaaaaaawvjqjuetmdkenuoqttvmyfsb22l7qoq4sru3u6z2dfoog4yryuea" # Example Image OCID, consider using a variable
+    source_type = "IMAGE"
   }
-
   node_config_details {
+    size = 2 # Starting with a smaller node count
     placement_configs {
-      availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
-      subnet_id           = oci_core_subnet.oke_nodes_subnet.id
+      availability_domain = "SpPm:US-ASHBURN-AD-1"
+      subnet_id           = oci_core_subnet.node_subnet.id
     }
-    size = 4
-    nsg_ids = [oci_core_network_security_group.worker_node_nsg.id]
+    placement_configs {
+      availability_domain = "SpPm:US-ASHBURN-AD-2"
+      subnet_id           = oci_core_subnet.node_subnet.id
+    }
+    placement_configs {
+      availability_domain = "SpPm:US-ASHBURN-AD-3"
+      subnet_id           = oci_core_subnet.node_subnet.id
+    }
   }
-}
-
-# -----------------------------------------------------------------------------
-# Kubernetes Provider Configuration via Local File
-# -----------------------------------------------------------------------------
-data "oci_containerengine_cluster_kube_config" "kube_config" {
-  cluster_id = oci_containerengine_cluster.oke_cluster.id
-}
-
-resource "local_file" "kubeconfig" {
-  content  = data.oci_containerengine_cluster_kube_config.kube_config.content
-  filename = "${path.module}/oke_kubeconfig.yaml"
-}
-
-provider "kubernetes" {
-  config_path = local_file.kubeconfig.filename
-}
-
-# -----------------------------------------------------------------------------
-# Kubernetes RBAC for CI/CD Pipeline
-# -----------------------------------------------------------------------------
-resource "kubernetes_namespace" "app_ns" {
-  metadata {
-    name = "ktor-app"
-  }
-}
-
-resource "kubernetes_service_account" "cicd_sa" {
-  metadata {
-    name      = "github-actions-sa"
-    namespace = kubernetes_namespace.app_ns.metadata[0].name
-  }
-}
-
-resource "kubernetes_role" "cicd_role" {
-  metadata {
-    name      = "deployer-role"
-    namespace = kubernetes_namespace.app_ns.metadata[0].name
-  }
-  rule {
-    api_groups = ["", "apps", "extensions", "networking.k8s.io"]
-    resources  = ["deployments", "services", "ingresses", "pods"]
-    verbs      = ["*"]
-  }
-}
-
-resource "kubernetes_role_binding" "cicd_rb" {
-  metadata {
-    name      = "deployer-binding"
-    namespace = kubernetes_namespace.app_ns.metadata[0].name
-  }
-
-  role_ref {
-    api_group = "rbac.authorization.k8s.io"
-    kind      = "Role"
-    name      = kubernetes_role.cicd_role.metadata[0].name
-  }
-
-  subject {
-    kind      = "ServiceAccount"
-    name      = kubernetes_service_account.cicd_sa.metadata[0].name
-    namespace = kubernetes_namespace.app_ns.metadata[0].name
-  }
-}
-
-# -----------------------------------------------------------------------------
-# Data Source and Outputs
-# -----------------------------------------------------------------------------
-data "oci_identity_availability_domains" "ads" {
-  compartment_id = var.compartment_ocid
-}
-
-output "cluster_ocid" {
-  description = "The OCID of the OKE cluster."
-  value       = oci_containerengine_cluster.oke_cluster.id
-}
-
-output "application_namespace" {
-  description = "The Kubernetes namespace created for the application."
-  value       = kubernetes_namespace.app_ns.metadata[0].name
-}
-
-output "kubeconfig_file" {
-  description = "Path to the generated kubeconfig file."
-  value       = local_file.kubeconfig.filename
 }
