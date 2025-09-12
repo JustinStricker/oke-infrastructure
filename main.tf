@@ -76,13 +76,13 @@ resource "oci_core_subnet" "node_subnet" {
 }
 
 resource "oci_core_subnet" "service_lb_subnet" {
-  cidr_block        = "10.0.20.0/24"
-  compartment_id    = var.compartment_ocid
-  display_name      = "oke-lb-subnet"
-  dns_label         = "lbs"
-  vcn_id            = oci_core_vcn.generated_oci_core_vcn.id
-  route_table_id    = oci_core_vcn.generated_oci_core_vcn.default_route_table_id
-  security_list_ids = [oci_core_vcn.generated_oci_core_vcn.default_security_list_id] # Using default for simplicity, can be customized
+  cidr_block                 = "10.0.20.0/24"
+  compartment_id             = var.compartment_ocid
+  display_name               = "oke-lb-subnet"
+  dns_label                  = "lbs"
+  vcn_id                     = oci_core_vcn.generated_oci_core_vcn.id
+  route_table_id             = oci_core_vcn.generated_oci_core_vcn.default_route_table_id
+  security_list_ids          = [oci_core_vcn.generated_oci_core_vcn.default_security_list_id] # Using default for simplicity, can be customized
   prohibit_public_ip_on_vnic = false
 }
 
@@ -287,4 +287,3 @@ resource "oci_containerengine_node_pool" "node_pool" {
     }
   }
 }
-
