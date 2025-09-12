@@ -11,6 +11,7 @@ jobs:
   terraform:
     name: 'Terraform'
     runs-on: ubuntu-latest
+
     steps:
       - name: 'Checkout code'
         uses: actions/checkout@v3
@@ -23,9 +24,6 @@ jobs:
           echo "${{ secrets.OCI_PRIVATE_KEY }}" > /tmp/oci_api_key.pem
           chmod 600 /tmp/oci_api_key.pem
 
-      # This 'terraform init' step provides all backend configuration,
-      # including authentication, directly via command-line flags.
-      # This method is explicitly supported by the official HashiCorp documentation.
       - name: 'Terraform Init'
         id: init
         run: |
@@ -39,16 +37,15 @@ jobs:
             -backend-config="fingerprint=${{ secrets.OCI_FINGERPRINT }}" \
             -backend-config="private_key_path=/tmp/oci_api_key.pem"
 
-      # The 'apply' step still uses TF_VAR environment variables to configure
-      # the OCI provider, which is separate from the backend configuration.
       - name: 'Terraform Apply'
         id: apply
         env:
-          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
-          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
-          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          TF_VAR_tenancy_ocid:     ${{ secrets.OCI_TENANCY_OCID }}
+          TF_VAR_user_ocid:        ${{ secrets.OCI_USER_OCID }}
+          TF_VAR_fingerprint:      ${{ secrets.OCI_FINGERPRINT }}
           TF_VAR_private_key_path: /tmp/oci_api_key.pem
           TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
-          TF_VAR_region: ${{ secrets.OCI_REGION }}
-          TF_VAR_node_image_ocid: ${{ secrets.OCI_NODE_IMAGE_OCID }}
+          TF_VAR_region:           ${{ secrets.OCI_REGION }}
+          TF_VAR_node_image_ocid:  ${{ secrets.OCI_NODE_IMAGE_OCID }}
         run: terraform apply -auto-approve
+
