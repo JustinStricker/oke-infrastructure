@@ -8,18 +8,18 @@ terraform {
   }
 }
 
-# Provider configuration assumes authentication is handled by environment variables.
+# Provider configuration assumes authentication is handled by environment variables from GitHub Actions.
 provider "oci" {}
 
 # --- Input Variables ---
 
 variable "compartment_ocid" {
-  description = "The OCID of the compartment where resources will be created."
+  description = "The OCID of the compartment where resources will be created. Passed from GitHub secrets."
   type        = string
 }
 
 variable "tenancy_ocid" {
-  description = "The OCID of your tenancy (root compartment)."
+  description = "The OCID of your tenancy (root compartment). Passed from GitHub secrets."
   type        = string
 }
 
@@ -236,7 +236,7 @@ resource "oci_core_security_list" "kubernetes_api_endpoint_sec_list" {
     }
     protocol  = "1"
     source    = "10.0.10.0/24"
-    stateless = "false"
+    stateless   = "false"
   }
 }
 
@@ -310,7 +310,8 @@ resource "oci_containerengine_node_pool" "create_node_pool_details0" {
       "OKEnodePoolName" = "pool1"
     }
     node_pool_pod_network_option_details {
-      cni_type = "OCI_VCN_IP_NATIVE"
+      cni_type       = "OCI_VCN_IP_NATIVE"
+      pod_subnet_ids = [oci_core_subnet.node_subnet.id]
     }
   }
 
