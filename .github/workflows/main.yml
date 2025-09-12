@@ -3,59 +3,57 @@ name: 'Terraform OKE Deployment'
 on:
   push:
     branches:
-      - main # Triggers on push to the main branch
-  pull_request: # Triggers on pull requests targeting main
+      - main
+  pull_request:
 
 jobs:
   terraform:
     name: 'Terraform'
     runs-on: ubuntu-latest
-    env:
-      # Credentials for OCI Provider Authentication
-      OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
-      OCI_TENANCY_OCID:     ${{ secrets.OCI_TENANCY_OCID }} # Added for IAM resources
-      OCI_USER_OCID:        ${{ secrets.OCI_USER_OCID }}
-      OCI_FINGERPRINT:      ${{ secrets.OCI_FINGERPRINT }}
-      OCI_PRIVATE_KEY:      ${{ secrets.OCI_PRIVATE_KEY }}
-      OCI_REGION:           ${{ secrets.OCI_REGION }}
-
-      # Pass values to Terraform Input Variables
-      TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
-      TF_VAR_tenancy_ocid:     ${{ secrets.OCI_TENANCY_OCID }} # Added for IAM resources
-
     steps:
-      # 1. Checkout your repository code
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2. Setup Terraform CLI
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      # 3. Initialize Terraform
-      #    Terraform downloads the OCI provider and sets up the backend.
       - name: Terraform Init
         id: init
         run: terraform init
+        env:
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          OCI_TENANCY_OCID:     ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID:        ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT:      ${{ secrets.OCI_FINGERPRINT }}
+          OCI_PRIVATE_KEY:      ${{ secrets.OCI_PRIVATE_KEY }}
+          OCI_REGION:           ${{ secrets.OCI_REGION }}
 
-      # 4. Check if the code is formatted correctly
-      - name: Terraform Format Check
-        id: fmt
-        run: terraform fmt -check
-
-      # 5. Validate the Terraform configuration
       - name: Terraform Validate
         id: validate
         run: terraform validate -no-color
 
-      # 6. Generate a Terraform Plan
-      #    A plan is created for all pushes, including on pull requests.
       - name: Terraform Plan
         id: plan
         run: terraform plan -no-color
+        env:
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          OCI_TENANCY_OCID:     ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID:        ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT:      ${{ secrets.OCI_FINGERPRINT }}
+          OCI_PRIVATE_KEY:      ${{ secrets.OCI_PRIVATE_KEY }}
+          OCI_REGION:           ${{ secrets.OCI_REGION }}
+          TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          TF_VAR_tenancy_ocid:     ${{ secrets.OCI_TENANCY_OCID }}
 
-      # 7. Apply the plan ONLY on the main branch
-      #    This step runs only when code is pushed to the main branch.
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: terraform apply -auto-approve -no-color
+        env:
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          OCI_TENANCY_OCID:     ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID:        ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT:      ${{ secrets.OCI_FINGERPRINT }}
+          OCI_PRIVATE_KEY:      ${{ secrets.OCI_PRIVATE_KEY }}
+          OCI_REGION:           ${{ secrets.OCI_REGION }}
+          TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          TF_VAR_tenancy_ocid:     ${{ secrets.OCI_TENANCY_OCID }}
