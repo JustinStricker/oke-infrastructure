@@ -13,35 +13,9 @@ terraform {
 provider "oci" {}
 
 # --- Input Variables ---
-# Authentication variables have been removed as requested.
 
 variable "compartment_ocid" {
   description = "The OCID of the compartment where resources will be created."
-  type        = string
-}
-
-variable "tenancy_ocid" {
-  description = "The OCID of the OCI tenancy."
-  type        = string
-}
-
-variable "user_ocid" {
-  description = "The OCID of the OCI user for API authentication."
-  type        = string
-}
-
-variable "private_key_path" {
-  description = "The local path to the OCI API private key."
-  type        = string
-}
-
-variable "fingerprint" {
-  description = "The fingerprint of the OCI API public key."
-  type        = string
-}
-
-variable "region" {
-  description = "The OCI region to deploy resources in."
   type        = string
 }
 
@@ -80,23 +54,25 @@ resource "oci_core_default_route_table" "generated_oci_core_default_route_table"
 # --- Subnets ---
 
 resource "oci_core_subnet" "kubernetes_api_endpoint_subnet" {
-  cidr_block        = "10.0.0.0/28"
-  compartment_id    = var.compartment_ocid
-  display_name      = "oke-k8s-api-subnet"
-  dns_label         = "k8sapi"
-  vcn_id            = oci_core_vcn.generated_oci_core_vcn.id
-  route_table_id    = oci_core_vcn.generated_oci_core_vcn.default_route_table_id
-  security_list_ids = [oci_core_security_list.kubernetes_api_endpoint_sec_list.id]
+  cidr_block                 = "10.0.0.0/28"
+  compartment_id             = var.compartment_ocid
+  display_name               = "oke-k8s-api-subnet"
+  dns_label                  = "k8sapi"
+  vcn_id                     = oci_core_vcn.generated_oci_core_vcn.id
+  route_table_id             = oci_core_vcn.generated_oci_core_vcn.default_route_table_id
+  security_list_ids          = [oci_core_security_list.kubernetes_api_endpoint_sec_list.id]
+  prohibit_public_ip_on_vnic = false
 }
 
 resource "oci_core_subnet" "node_subnet" {
-  cidr_block        = "10.0.10.0/24"
-  compartment_id    = var.compartment_ocid
-  display_name      = "oke-node-subnet"
-  dns_label         = "nodes"
-  vcn_id            = oci_core_vcn.generated_oci_core_vcn.id
-  route_table_id    = oci_core_vcn.generated_oci_core_vcn.default_route_table_id
-  security_list_ids = [oci_core_security_list.node_sec_list.id]
+  cidr_block                 = "10.0.10.0/24"
+  compartment_id             = var.compartment_ocid
+  display_name               = "oke-node-subnet"
+  dns_label                  = "nodes"
+  vcn_id                     = oci_core_vcn.generated_oci_core_vcn.id
+  route_table_id             = oci_core_vcn.generated_oci_core_vcn.default_route_table_id
+  security_list_ids          = [oci_core_security_list.node_sec_list.id]
+  prohibit_public_ip_on_vnic = false
 }
 
 resource "oci_core_subnet" "service_lb_subnet" {
@@ -107,6 +83,7 @@ resource "oci_core_subnet" "service_lb_subnet" {
   vcn_id            = oci_core_vcn.generated_oci_core_vcn.id
   route_table_id    = oci_core_vcn.generated_oci_core_vcn.default_route_table_id
   security_list_ids = [oci_core_vcn.generated_oci_core_vcn.default_security_list_id] # Using default for simplicity, can be customized
+  prohibit_public_ip_on_vnic = false
 }
 
 # --- Security Lists ---
@@ -310,3 +287,4 @@ resource "oci_containerengine_node_pool" "node_pool" {
     }
   }
 }
+
