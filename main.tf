@@ -283,6 +283,25 @@ resource "oci_containerengine_node_pool" "create_node_pool_details0" {
   name               = "pool1"
   node_shape         = "VM.Standard.A1.Flex"
 
+  # This block passes a cloud-init script to the worker nodes to install the Image Credential Provider.
+  node_metadata = {
+    user_data = base64encode(<<-EOT
+      #!/bin/bash
+      curl --fail -H "Authorization: Bearer Oracle" -L0 http://169.254.169.254/opc/v2/instance/metadata/oke_init_script | base64 --decode >/var/run/oke-init.sh
+
+      # download binaries on the worker node for ARM architecture (A1.Flex)
+      wget https://github.com/oracle-devrel/oke-credential-provider-for-ocir/releases/latest/download/oke-credential-provider-for-ocir-linux-arm64 -O /usr/local/bin/credential-provider-oke
+      wget https://github.com/oracle-devrel/oke-credential-provider-for-ocir/releases/latest/download/credential-provider-config.yaml -P /etc/kubernetes/
+
+      # add permission to execute
+      sudo chmod 755 /usr/local/bin/credential-provider-oke
+
+      # configure kubelet with image credential provider
+      bash /var/run/oke-init.sh --kubelet-extra-args "--image-credential-provider-bin-dir=/usr/local/bin/ --image-credential-provider-config=/etc/kubernetes/credential-provider-config.yaml"
+    EOT
+    )
+  }
+
   freeform_tags = {
     "OKEnodePoolName" = "pool1"
   }
