@@ -36,6 +36,16 @@ jobs:
         id: init
         run: terraform init
 
+      # --- This is the new step to test permissions ---
+      - name: Check OCI Permissions
+        id: check_perms
+        run: |
+          echo "--- Installing OCI CLI ---"
+          pip3 install oci-cli
+          echo "--- Checking permissions to create a VCN (dry run)... ---"
+          oci network vcn create --compartment-id ${{ env.TF_VAR_compartment_ocid }} --cidr-block "10.0.0.0/16" --display-name "permission-check-dry-run" --dry-run
+          echo "--- VCN creation permission check successful! ---"
+
       - name: Terraform Validate
         id: validate
         run: terraform validate -no-color
