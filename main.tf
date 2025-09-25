@@ -252,7 +252,7 @@ resource "oci_mysql_mysql_db_system" "mysql" {
     admin_password          = var.db_admin_password
     compartment_id          = var.compartment_ocid
     subnet_id               = oci_core_subnet.node_subnet.id
-    availability_domain     = data.oci_identity_availability_domains.ads.availability_domains[0].name
+    availability_domain     = data.oci_identity_availability_domains.ads.availability_domains[2].name
     shape_name              = "MySQL.Free"
     display_name            = "mysql"
     data_storage_size_in_gb = 50
