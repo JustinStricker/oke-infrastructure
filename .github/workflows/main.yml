@@ -1,4 +1,4 @@
-name: 'Terraform OKE Deployment'
+name: 'Terraform OCI Deployment'
 
 on:
   push:
@@ -10,6 +10,21 @@ jobs:
   terraform:
     name: 'Terraform'
     runs-on: ubuntu-latest
+    
+    env:
+      # OCI provider authentication secrets
+      OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+      OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+      OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+      OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+      OCI_REGION: ${{ secrets.OCI_REGION }}
+      
+      # Terraform input variables
+      TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+      TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+      TF_VAR_db_admin_username: ${{ secrets.DB_ADMIN_USERNAME }}
+      TF_VAR_db_admin_password: ${{ secrets.DB_ADMIN_PASSWORD }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -20,13 +35,6 @@ jobs:
       - name: Terraform Init
         id: init
         run: terraform init
-        env:
-          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
-          OCI_TENANCY_OCID:     ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_USER_OCID:        ${{ secrets.OCI_USER_OCID }}
-          OCI_FINGERPRINT:      ${{ secrets.OCI_FINGERPRINT }}
-          OCI_PRIVATE_KEY:      ${{ secrets.OCI_PRIVATE_KEY }}
-          OCI_REGION:           ${{ secrets.OCI_REGION }}
 
       - name: Terraform Validate
         id: validate
@@ -35,25 +43,11 @@ jobs:
       - name: Terraform Plan
         id: plan
         run: terraform plan -no-color
-        env:
-          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
-          OCI_TENANCY_OCID:     ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_USER_OCID:        ${{ secrets.OCI_USER_OCID }}
-          OCI_FINGERPRINT:      ${{ secrets.OCI_FINGERPRINT }}
-          OCI_PRIVATE_KEY:      ${{ secrets.OCI_PRIVATE_KEY }}
-          OCI_REGION:           ${{ secrets.OCI_REGION }}
-          TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
-          TF_VAR_tenancy_ocid:     ${{ secrets.OCI_TENANCY_OCID }}
 
       - name: Terraform Apply
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: terraform apply -auto-approve -no-color
-        env:
-          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
-          OCI_TENANCY_OCID:     ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_USER_OCID:        ${{ secrets.OCI_USER_OCID }}
-          OCI_FINGERPRINT:      ${{ secrets.OCI_FINGERPRINT }}
-          OCI_PRIVATE_KEY:      ${{ secrets.OCI_PRIVATE_KEY }}
-          OCI_REGION:           ${{ secrets.OCI_REGION }}
-          TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
-          TF_VAR_tenancy_ocid:     ${{ secrets.OCI_TENANCY_OCID }}
+
+      - name: Run Terraform Destroy on Failure
+        if: failure()
+        run: terraform destroy -auto-approve -no-color
