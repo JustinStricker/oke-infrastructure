@@ -358,17 +358,13 @@ resource "oci_containerengine_node_pool" "create_node_pool_details0" {
 
 resource "oci_mysql_mysql_db_system" "mysql_heatwave" {
   compartment_id          = var.compartment_ocid
-  availability_domain     = data.oci_identity_availability_domains.ads.availability_domains[0].name
+  availability_domain     = "SpPm:US-ASHBURN-AD-3" # Explicitly set AD as requested
   display_name            = "mysql-heatwave-db"
-  shape_name              = "MySQL.Free" # Shape that supports HeatWave
+  shape_name              = "MySQL.Free"
   admin_username          = var.db_admin_username
   admin_password          = var.db_admin_password
   data_storage_size_in_gb = 50
   subnet_id               = oci_core_subnet.node_subnet.id
-}
-
-data "oci_identity_availability_domains" "ads" {
-  compartment_id = var.tenancy_ocid
 }
 
 # --- IAM ---
