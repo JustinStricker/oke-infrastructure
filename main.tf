@@ -10,12 +10,12 @@ terraform {
 provider "oci" {}
 
 variable "compartment_ocid" {
-  description = "Compartment OCID"
+  description = "The OCID of the compartment where resources will be created."
   type        = string
 }
 
 variable "tenancy_ocid" {
-  description = "Tenancy OCID"
+  description = "The OCID of your tenancy."
   type        = string
 }
 
@@ -31,15 +31,15 @@ variable "db_admin_password" {
   sensitive   = true
 }
 
-# VCN with DNS resolution enabled (best practice)
+# --- Networking Resources ---
+
 resource "oci_core_vcn" "generated_oci_core_vcn" {
-  cidr_block     = "10.0.0.0/16"
-  compartment_id = var.compartment_ocid
-  display_name   = "oke-vcn-quick-oke-infrastructure-a8536cb57"
-  dns_label      = "okeinfrastructu"
-  # Enable DNS support (optional, recommended for OKE)
-  # enable_dns_support = true
-  # enable_dns_hostnames = true
+  cidr_block           = "10.0.0.0/16"
+  compartment_id       = var.compartment_ocid
+  display_name         = "oke-vcn-quick-oke-infrastructure-a8536cb57"
+  dns_label            = "okeinfrastructu"
+  enable_dns_support   = true
+  enable_dns_hostnames = true
 }
 
 resource "oci_core_internet_gateway" "generated_oci_core_internet_gateway" {
@@ -49,16 +49,10 @@ resource "oci_core_internet_gateway" "generated_oci_core_internet_gateway" {
   vcn_id         = oci_core_vcn.generated_oci_core_vcn.id
 }
 
-resource "oci_core_nat_gateway" "oke_nat_gateway" {
-  compartment_id = var.compartment_ocid
-  vcn_id         = oci_core_vcn.generated_oci_core_vcn.id
-  display_name   = "oke-nat-gateway-for-nodes"
-}
-
-# Public route table with IGW for internet traffic
 resource "oci_core_default_route_table" "generated_oci_core_default_route_table" {
   manage_default_resource_id = oci_core_vcn.generated_oci_core_vcn.default_route_table_id
   display_name               = "oke-public-routetable-oke-infrastructure-a8536cb57"
+
   route_rules {
     description       = "traffic to/from internet"
     destination       = "0.0.0.0/0"
@@ -67,18 +61,7 @@ resource "oci_core_default_route_table" "generated_oci_core_default_route_table"
   }
 }
 
-# Private route table for node subnet with NAT gateway egress
-resource "oci_core_route_table" "private_node_route_table" {
-  compartment_id = var.compartment_ocid
-  vcn_id         = oci_core_vcn.generated_oci_core_vcn.id
-  display_name   = "oke-private-node-routetable"
-  route_rules {
-    destination       = "0.0.0.0/0"
-    network_entity_id = oci_core_nat_gateway.oke_nat_gateway.id
-  }
-}
-
-# Subnets
+# --- Subnets ---
 
 resource "oci_core_subnet" "kubernetes_api_endpoint_subnet" {
   cidr_block                 = "10.0.0.0/28"
@@ -97,9 +80,9 @@ resource "oci_core_subnet" "node_subnet" {
   display_name               = "oke-nodesubnet-quick-oke-infrastructure-a8536cb57-regional"
   dns_label                  = "subf53e889a4"
   vcn_id                     = oci_core_vcn.generated_oci_core_vcn.id
-  route_table_id             = oci_core_route_table.private_node_route_table.id
+  route_table_id             = oci_core_vcn.generated_oci_core_vcn.default_route_table_id
   security_list_ids          = [oci_core_security_list.node_sec_list.id]
-  prohibit_public_ip_on_vnic = false # Changed from true to false to allow public IPs for troubleshooting and connectivity
+  prohibit_public_ip_on_vnic = false
 }
 
 resource "oci_core_subnet" "service_lb_subnet" {
@@ -113,49 +96,97 @@ resource "oci_core_subnet" "service_lb_subnet" {
   prohibit_public_ip_on_vnic = false
 }
 
-# Security Lists
+# --- Security Lists ---
 
 resource "oci_core_security_list" "node_sec_list" {
   compartment_id = var.compartment_ocid
   vcn_id         = oci_core_vcn.generated_oci_core_vcn.id
-  display_name   = "oke-nodeseclist-enhanced"
+  display_name   = "oke-nodeseclist-quick-oke-infrastructure-a8536cb57"
 
-  # Egress rules - allow all necessary traffic to reach API endpoint and internet
   egress_security_rules {
-    description = "Allow worker nodes to connect to Kubernetes API and internet"
-    destination = "0.0.0.0/0"
-    protocol    = "all"
-    stateless   = false
+    description      = "Allow pods on one worker node to communicate with pods on other worker nodes"
+    destination      = "10.0.10.0/24"
+    destination_type = "CIDR_BLOCK"
+    protocol         = "all"
+    stateless        = false
   }
-
-  # Ingress rules - allow control plane and intra-node communication
+  egress_security_rules {
+    description      = "Access to Kubernetes API Endpoint"
+    destination      = "10.0.0.0/28"
+    destination_type = "CIDR_BLOCK"
+    protocol         = "6"
+    stateless        = false
+  }
+  egress_security_rules {
+    description      = "Kubernetes worker to control plane communication"
+    destination      = "10.0.0.0/28"
+    destination_type = "CIDR_BLOCK"
+    protocol         = "6"
+    stateless        = false
+  }
+  egress_security_rules {
+    description      = "Path discovery"
+    destination      = "10.0.0.0/28"
+    destination_type = "CIDR_BLOCK"
+    icmp_options {
+      code = "4"
+      type = "3"
+    }
+    protocol  = "1"
+    stateless = false
+  }
+  egress_security_rules {
+    description      = "Allow nodes to communicate with OKE to ensure correct start-up and continued functioning"
+    destination      = "all-iad-services-in-oracle-services-network"
+    destination_type = "SERVICE_CIDR_BLOCK"
+    protocol         = "6"
+    stateless        = false
+  }
+  egress_security_rules {
+    description      = "ICMP Access from Kubernetes Control Plane"
+    destination      = "0.0.0.0/0"
+    destination_type = "CIDR_BLOCK"
+    icmp_options {
+      code = "4"
+      type = "3"
+    }
+    protocol  = "1"
+    stateless = false
+  }
+  egress_security_rules {
+    description      = "Worker Nodes access to Internet"
+    destination      = "0.0.0.0/0"
+    destination_type = "CIDR_BLOCK"
+    protocol         = "all"
+    stateless        = false
+  }
   ingress_security_rules {
-    description = "Allow all intra-node subnet communication"
+    description = "Allow pods on one worker node to communicate with pods on other worker nodes"
+    protocol    = "all"
     source      = "10.0.10.0/24"
-    protocol    = "all"
     stateless   = false
   }
-
   ingress_security_rules {
-    description = "Allow traffic from Kubernetes API endpoint subnet to nodes"
-    source      = "10.0.0.0/28"
-    protocol    = "6"
-    tcp_options {
-      min = 443
-      max = 443
+    description = "Path discovery"
+    icmp_options {
+      code = "4"
+      type = "3"
     }
+    protocol  = "1"
+    source    = "10.0.0.0/28"
     stateless = false
   }
-
   ingress_security_rules {
-    description = "Allow inbound SSH from anywhere"
-    source      = "0.0.0.0/0"
+    description = "TCP access from Kubernetes Control Plane"
     protocol    = "6"
-    tcp_options {
-      min = 22
-      max = 22
-    }
-    stateless = false
+    source      = "10.0.0.0/28"
+    stateless   = false
+  }
+  ingress_security_rules {
+    description = "Inbound SSH traffic to worker nodes"
+    protocol    = "6"
+    source      = "0.0.0.0/0"
+    stateless   = false
   }
 }
 
@@ -165,27 +196,61 @@ resource "oci_core_security_list" "kubernetes_api_endpoint_sec_list" {
   display_name   = "oke-k8sApiEndpoint-quick-oke-infrastructure-a8536cb57"
 
   egress_security_rules {
-    description = "Allow API endpoint to communicate with nodes"
-    destination = "10.0.10.0/24"
-    protocol    = "6"
-    tcp_options {
-      min = 443
-      max = 443
-    }
+    description      = "Allow Kubernetes Control Plane to communicate with OKE"
+    destination      = "all-iad-services-in-oracle-services-network"
+    destination_type = "SERVICE_CIDR_BLOCK"
+    protocol         = "6"
+    stateless        = false
   }
-
+  egress_security_rules {
+    description      = "All traffic to worker nodes"
+    destination      = "10.0.10.0/24"
+    destination_type = "CIDR_BLOCK"
+    protocol         = "6"
+    stateless        = false
+  }
+  egress_security_rules {
+    description      = "Path discovery"
+    destination      = "10.0.10.0/24"
+    destination_type = "CIDR_BLOCK"
+    icmp_options {
+      code = "4"
+      type = "3"
+    }
+    protocol  = "1"
+    stateless = false
+  }
   ingress_security_rules {
-    description = "Allow external access to Kubernetes API endpoint on port 6443"
+    description = "External access to Kubernetes API endpoint"
     protocol    = "6"
     source      = "0.0.0.0/0"
-    tcp_options {
-      min = 6443
-      max = 6443
+    stateless   = false
+  }
+  ingress_security_rules {
+    description = "Kubernetes worker to Kubernetes API endpoint communication"
+    protocol    = "6"
+    source      = "10.0.10.0/24"
+    stateless   = false
+  }
+  ingress_security_rules {
+    description = "Kubernetes worker to control plane communication"
+    protocol    = "6"
+    source      = "10.0.10.0/24"
+    stateless   = false
+  }
+  ingress_security_rules {
+    description = "Path discovery"
+    icmp_options {
+      code = "4"
+      type = "3"
     }
+    protocol  = "1"
+    source    = "10.0.10.0/24"
+    stateless = false
   }
 }
 
-# OKE Cluster Resource
+# --- OKE Cluster ---
 
 resource "oci_containerengine_cluster" "generated_oci_containerengine_cluster" {
   compartment_id     = var.compartment_ocid
@@ -193,6 +258,10 @@ resource "oci_containerengine_cluster" "generated_oci_containerengine_cluster" {
   name               = "oke-infrastructure"
   vcn_id             = oci_core_vcn.generated_oci_core_vcn.id
   type               = "BASIC_CLUSTER"
+
+  cluster_pod_network_options {
+    cni_type = "OCI_VCN_IP_NATIVE"
+  }
 
   endpoint_config {
     is_public_ip_enabled = true
@@ -217,7 +286,7 @@ resource "oci_containerengine_cluster" "generated_oci_containerengine_cluster" {
   }
 }
 
-# Node Pool
+# --- OKE Node Pool ---
 
 resource "oci_containerengine_node_pool" "create_node_pool_details0" {
   cluster_id         = oci_containerengine_cluster.generated_oci_containerengine_cluster.id
@@ -230,17 +299,27 @@ resource "oci_containerengine_node_pool" "create_node_pool_details0" {
     user_data = base64encode(<<-EOT
       #!/bin/bash
       curl --fail -H "Authorization: Bearer Oracle" -L0 http://169.254.169.254/opc/v2/instance/metadata/oke_init_script | base64 --decode >/var/run/oke-init.sh
+
       wget https://github.com/oracle-devrel/oke-credential-provider-for-ocir/releases/latest/download/oke-credential-provider-for-ocir-linux-arm64 -O /usr/local/bin/credential-provider-oke
       wget https://github.com/oracle-devrel/oke-credential-provider-for-ocir/releases/latest/download/credential-provider-config.yaml -P /etc/kubernetes/
+
       sudo chmod 755 /usr/local/bin/credential-provider-oke
       bash /var/run/oke-init.sh --kubelet-extra-args "--image-credential-provider-bin-dir=/usr/local/bin/ --image-credential-provider-config=/etc/kubernetes/credential-provider-config.yaml"
     EOT
     )
   }
 
+  freeform_tags = {
+    "OKEnodePoolName" = "pool1"
+  }
+
+  initial_node_labels {
+    key   = "name"
+    value = "oke-infrastructure"
+  }
+
   node_config_details {
     size = 4
-
     placement_configs {
       availability_domain = "SpPm:US-ASHBURN-AD-1"
       subnet_id           = oci_core_subnet.node_subnet.id
@@ -253,6 +332,17 @@ resource "oci_containerengine_node_pool" "create_node_pool_details0" {
       availability_domain = "SpPm:US-ASHBURN-AD-3"
       subnet_id           = oci_core_subnet.node_subnet.id
     }
+    freeform_tags = {
+      "OKEnodePoolName" = "pool1"
+    }
+    node_pool_pod_network_option_details {
+      cni_type       = "OCI_VCN_IP_NATIVE"
+      pod_subnet_ids = [oci_core_subnet.node_subnet.id]
+    }
+  }
+
+  node_eviction_node_pool_settings {
+    eviction_grace_duration = "PT60M"
   }
 
   node_shape_config {
@@ -266,29 +356,27 @@ resource "oci_containerengine_node_pool" "create_node_pool_details0" {
   }
 }
 
-# MySQL HeatWave resource and IAM resources remain unchanged here
+# --- Oracle MySQL HeatWave Database System ---
 
-resource "oci_mysql_mysql_db_system" "mysql" {
-  admin_username          = var.db_admin_username
-  admin_password          = var.db_admin_password
-  compartment_id          = var.compartment_ocid
-  subnet_id               = oci_core_subnet.node_subnet.id
-  availability_domain     = data.oci_identity_availability_domains.ads.availability_domains[2].name
-  shape_name              = "MySQL.Free"
-  display_name            = "mysql"
-  data_storage_size_in_gb = 50
-  port                    = 3306
-  port_x                  = 33060
-  crash_recovery          = "ENABLED"
-  database_management     = "DISABLED"
-  deletion_policy {
-    is_delete_protected = false
-  }
+resource "oci_mysql_mysql_db_system" "mysql_heatwave" {
+  compartment_id           = var.compartment_ocid
+  availability_domain      = data.oci_identity_availability_domains.ads.availability_domains[0].name
+  display_name             = "mysql-heatwave-db"
+  shape_name               = "MySQL.MYSAPREMIUM" # or a shape supporting HeatWave
+  admin_username           = var.db_admin_username
+  admin_password           = var.db_admin_password
+  version                  = "8.0.25"
+  data_storage_size_in_gb  = 50
+  subnet_id                = oci_core_subnet.node_subnet.id
+  is_heat_wave_enabled     = true
+  # Additional HeatWave-specific configurations can be added per documentation
 }
 
 data "oci_identity_availability_domains" "ads" {
   compartment_id = var.tenancy_ocid
 }
+
+# --- IAM ---
 
 resource "oci_identity_dynamic_group" "oke_nodes_dynamic_group" {
   compartment_id = var.tenancy_ocid
@@ -301,10 +389,12 @@ resource "oci_identity_policy" "oke_nodes_ocir_policy" {
   compartment_id = var.tenancy_ocid
   name           = "oke_nodes_ocir_policy_tf"
   description    = "Policy to allow OKE worker nodes to pull images from OCIR, managed by Terraform."
-  statements     = ["Allow dynamic-group ${oci_identity_dynamic_group.oke_nodes_dynamic_group.name} to read repos in compartment id ${var.compartment_ocid}"]
+  statements     = [
+    "Allow dynamic-group ${oci_identity_dynamic_group.oke_nodes_dynamic_group.name} to read repos in compartment id ${var.compartment_ocid}"
+  ]
 }
 
 output "mysql_db_system_private_ip" {
-  description = "The private IP address of the MySQL DB System."
-  value       = oci_mysql_mysql_db_system.mysql.ip_address
+  description = "The private IP address of the MySQL HeatWave DB System."
+  value       = oci_mysql_mysql_db_system.mysql_heatwave.ip_address
 }
