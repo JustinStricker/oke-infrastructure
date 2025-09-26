@@ -282,7 +282,7 @@ resource "oci_mysql_mysql_db_system" "mysql" {
   crash_recovery          = "ENABLED"
   database_management     = "DISABLED"
   deletion_policy {
-    is_delete_protected = true
+    is_delete_protected = false
   }
 }
 
