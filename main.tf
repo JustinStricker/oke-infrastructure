@@ -360,7 +360,7 @@ resource "oci_mysql_mysql_db_system" "mysql_heatwave" {
   compartment_id          = var.compartment_ocid
   availability_domain     = data.oci_identity_availability_domains.ads.availability_domains[0].name
   display_name            = "mysql-heatwave-db"
-  shape_name              = "MySQL.MYSAPREMIUM" # Shape that supports HeatWave
+  shape_name              = "MySQL.Free" # Shape that supports HeatWave
   admin_username          = var.db_admin_username
   admin_password          = var.db_admin_password
   data_storage_size_in_gb = 50
