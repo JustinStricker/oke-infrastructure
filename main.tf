@@ -38,7 +38,6 @@ resource "oci_core_vcn" "generated_oci_core_vcn" {
   compartment_id = var.compartment_ocid
   display_name   = "oke-vcn-quick-oke-infrastructure-a8536cb57"
   dns_label      = "okeinfrastructu"
-  # Removed unsupported DNS flags
 }
 
 resource "oci_core_internet_gateway" "generated_oci_core_internet_gateway" {
@@ -109,7 +108,6 @@ resource "oci_core_security_list" "node_sec_list" {
     protocol         = "all"
     stateless        = false
   }
-
   egress_security_rules {
     description      = "Access to Kubernetes API Endpoint"
     destination      = "10.0.0.0/28"
@@ -117,7 +115,6 @@ resource "oci_core_security_list" "node_sec_list" {
     protocol         = "6"
     stateless        = false
   }
-
   egress_security_rules {
     description      = "Kubernetes worker to control plane communication"
     destination      = "10.0.0.0/28"
@@ -125,7 +122,6 @@ resource "oci_core_security_list" "node_sec_list" {
     protocol         = "6"
     stateless        = false
   }
-
   egress_security_rules {
     description      = "Path discovery"
     destination      = "10.0.0.0/28"
@@ -137,7 +133,6 @@ resource "oci_core_security_list" "node_sec_list" {
     protocol  = "1"
     stateless = false
   }
-
   egress_security_rules {
     description      = "Allow nodes to communicate with OKE to ensure correct start-up and continued functioning"
     destination      = "all-iad-services-in-oracle-services-network"
@@ -145,7 +140,6 @@ resource "oci_core_security_list" "node_sec_list" {
     protocol         = "6"
     stateless        = false
   }
-
   egress_security_rules {
     description      = "ICMP Access from Kubernetes Control Plane"
     destination      = "0.0.0.0/0"
@@ -157,7 +151,6 @@ resource "oci_core_security_list" "node_sec_list" {
     protocol  = "1"
     stateless = false
   }
-
   egress_security_rules {
     description      = "Worker Nodes access to Internet"
     destination      = "0.0.0.0/0"
@@ -165,14 +158,12 @@ resource "oci_core_security_list" "node_sec_list" {
     protocol         = "all"
     stateless        = false
   }
-
   ingress_security_rules {
     description = "Allow pods on one worker node to communicate with pods on other worker nodes"
     protocol    = "all"
     source      = "10.0.10.0/24"
     stateless   = false
   }
-
   ingress_security_rules {
     description = "Path discovery"
     icmp_options {
@@ -183,14 +174,12 @@ resource "oci_core_security_list" "node_sec_list" {
     source    = "10.0.0.0/28"
     stateless = false
   }
-
   ingress_security_rules {
     description = "TCP access from Kubernetes Control Plane"
     protocol    = "6"
     source      = "10.0.0.0/28"
     stateless   = false
   }
-
   ingress_security_rules {
     description = "Inbound SSH traffic to worker nodes"
     protocol    = "6"
@@ -211,7 +200,6 @@ resource "oci_core_security_list" "kubernetes_api_endpoint_sec_list" {
     protocol         = "6"
     stateless        = false
   }
-
   egress_security_rules {
     description      = "All traffic to worker nodes"
     destination      = "10.0.10.0/24"
@@ -219,7 +207,6 @@ resource "oci_core_security_list" "kubernetes_api_endpoint_sec_list" {
     protocol         = "6"
     stateless        = false
   }
-
   egress_security_rules {
     description      = "Path discovery"
     destination      = "10.0.10.0/24"
@@ -231,28 +218,24 @@ resource "oci_core_security_list" "kubernetes_api_endpoint_sec_list" {
     protocol  = "1"
     stateless = false
   }
-
   ingress_security_rules {
     description = "External access to Kubernetes API endpoint"
     protocol    = "6"
     source      = "0.0.0.0/0"
     stateless   = false
   }
-
   ingress_security_rules {
     description = "Kubernetes worker to Kubernetes API endpoint communication"
     protocol    = "6"
     source      = "10.0.10.0/24"
     stateless   = false
   }
-
   ingress_security_rules {
     description = "Kubernetes worker to control plane communication"
     protocol    = "6"
     source      = "10.0.10.0/24"
     stateless   = false
   }
-
   ingress_security_rules {
     description = "Path discovery"
     icmp_options {
@@ -374,16 +357,14 @@ resource "oci_containerengine_node_pool" "create_node_pool_details0" {
 # --- Oracle MySQL HeatWave Database System ---
 
 resource "oci_mysql_mysql_db_system" "mysql_heatwave" {
-  compartment_id           = var.compartment_ocid
-  availability_domain      = data.oci_identity_availability_domains.ads.availability_domains[0].name
-  display_name             = "mysql-heatwave-db"
-  shape_name               = "MySQL.MYSAPREMIUM" # Adjust shape for HeatWave if different
-  admin_username           = var.db_admin_username
-  admin_password           = var.db_admin_password
-  version                  = "8.0.25"
-  data_storage_size_in_gb  = 50
-  subnet_id                = oci_core_subnet.node_subnet.id
-  is_heat_wave_enabled     = true
+  compartment_id          = var.compartment_ocid
+  availability_domain     = data.oci_identity_availability_domains.ads.availability_domains[0].name
+  display_name            = "mysql-heatwave-db"
+  shape_name              = "MySQL.MYSAPREMIUM" # Shape that supports HeatWave
+  admin_username          = var.db_admin_username
+  admin_password          = var.db_admin_password
+  data_storage_size_in_gb = 50
+  subnet_id               = oci_core_subnet.node_subnet.id
 }
 
 data "oci_identity_availability_domains" "ads" {
