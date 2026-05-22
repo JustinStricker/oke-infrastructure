@@ -16,14 +16,6 @@ resource "oci_core_internet_gateway" "this" {
   vcn_id         = oci_core_vcn.this.id
 }
 
-# --- NAT Gateway for private subnets ---
-
-resource "oci_core_nat_gateway" "this" {
-  compartment_id = var.compartment_ocid
-  display_name   = "oke-natgw-${var.cluster_name}"
-  vcn_id         = oci_core_vcn.this.id
-}
-
 # --- Default Route Table (public subnets) ---
 
 resource "oci_core_default_route_table" "this" {
@@ -35,21 +27,6 @@ resource "oci_core_default_route_table" "this" {
     destination       = "0.0.0.0/0"
     destination_type  = "CIDR_BLOCK"
     network_entity_id = oci_core_internet_gateway.this.id
-  }
-}
-
-# --- Route Table for private subnet ---
-
-resource "oci_core_route_table" "private" {
-  compartment_id = var.compartment_ocid
-  vcn_id         = oci_core_vcn.this.id
-  display_name   = "oke-private-routetable-${var.cluster_name}"
-
-  route_rules {
-    description       = "Outbound traffic via NAT Gateway"
-    destination       = "0.0.0.0/0"
-    destination_type  = "CIDR_BLOCK"
-    network_entity_id = oci_core_nat_gateway.this.id
   }
 }
 
@@ -86,17 +63,6 @@ resource "oci_core_subnet" "service_lb" {
   route_table_id             = oci_core_vcn.this.default_route_table_id
   security_list_ids          = [oci_core_vcn.this.default_security_list_id]
   prohibit_public_ip_on_vnic = false
-}
-
-resource "oci_core_subnet" "postgres_private" {
-  cidr_block                 = "10.0.30.0/24"
-  compartment_id             = var.compartment_ocid
-  display_name               = "oke-postgres-subnet-${var.cluster_name}-private"
-  dns_label                  = "subpgpriv"
-  vcn_id                     = oci_core_vcn.this.id
-  route_table_id             = oci_core_route_table.private.id
-  security_list_ids          = [oci_core_security_list.postgres.id]
-  prohibit_public_ip_on_vnic = true
 }
 
 # --- Security Lists ---
@@ -163,13 +129,6 @@ resource "oci_core_security_list" "node" {
     protocol         = "all"
     stateless        = false
   }
-  egress_security_rules {
-    description      = "Access to PostgreSQL private subnet (port 5432)"
-    destination      = "10.0.30.0/24"
-    destination_type = "CIDR_BLOCK"
-    protocol         = "6"
-    stateless        = false
-  }
   ingress_security_rules {
     description = "Allow pods on one worker node to communicate with pods on other worker nodes"
     protocol    = "all"
@@ -230,13 +189,6 @@ resource "oci_core_security_list" "kubernetes_api_endpoint" {
     protocol  = "1"
     stateless = false
   }
-  egress_security_rules {
-    description      = "All traffic to PostgreSQL private subnet (port 5432)"
-    destination      = "10.0.30.0/24"
-    destination_type = "CIDR_BLOCK"
-    protocol         = "6"
-    stateless        = false
-  }
   ingress_security_rules {
     description = "External access to Kubernetes API endpoint"
     protocol    = "6"
@@ -264,44 +216,5 @@ resource "oci_core_security_list" "kubernetes_api_endpoint" {
     protocol  = "1"
     source    = "10.0.10.0/24"
     stateless = false
-  }
-}
-
-resource "oci_core_security_list" "postgres" {
-  compartment_id = var.compartment_ocid
-  vcn_id         = oci_core_vcn.this.id
-  display_name   = "oke-postgres-seclist-${var.cluster_name}"
-
-  egress_security_rules {
-    description      = "Allow PostgreSQL nodes to reach OCI Object Storage for backups"
-    destination      = "all-iad-services-in-oracle-services-network"
-    destination_type = "SERVICE_CIDR_BLOCK"
-    protocol         = "6"
-    stateless        = false
-  }
-  egress_security_rules {
-    description      = "Allow outbound traffic to node subnet (for operator communication)"
-    destination      = "10.0.10.0/24"
-    destination_type = "CIDR_BLOCK"
-    protocol         = "6"
-    stateless        = false
-  }
-  ingress_security_rules {
-    description = "Allow PostgreSQL traffic from worker nodes"
-    protocol    = "6"
-    source      = "10.0.10.0/24"
-    stateless   = false
-  }
-  ingress_security_rules {
-    description = "Allow PostgreSQL traffic from Kubernetes API endpoint"
-    protocol    = "6"
-    source      = "10.0.0.0/28"
-    stateless   = false
-  }
-  ingress_security_rules {
-    description = "Allow PostgreSQL traffic from service LB subnet"
-    protocol    = "6"
-    source      = "10.0.20.0/24"
-    stateless   = false
   }
 }

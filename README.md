@@ -13,26 +13,27 @@ This repository provisions an Oracle Kubernetes Engine (OKE) cluster on OCI usin
 │  │  ┌──────────────┐  ┌────────────┐  ┌───────────┐ ││
 │  │  │ API Endpoint  │  │   Nodes    │  │ Service LB │ ││
 │  │  │ 10.0.0.0/28  │  │10.0.10.0/24│  │10.0.20.0/24│ ││
+│  │  │              │  │  ┌──────┐  │  │           │ ││
+│  │  │              │  │  │ CNPG │  │  │           │ ││
+│  │  │              │  │  │ PG   │  │  │           │ ││
+│  │  │              │  │  └──────┘  │  │           │ ││
 │  │  └──────────────┘  └────────────┘  └───────────┘ ││
 │  └──────────────────────────────────────────────────┘│
 │                                                      │
-│  ┌──────────────────────────────────────────────────┐│
-│  │  Private Subnet                                   ││
-│  │  ┌────────────────────┐                           ││
-│  │  │ PostgreSQL (CNPG)  │                           ││
-│  │  │  10.0.30.0/24     │                           ││
-│  │  └────────────────────┘                           ││
-│  └──────────────────────────────────────────────────┘│
+│  PostgreSQL pods get IPs from the node subnet's       │
+│  pod CIDR (10.0.10.0/24) via OCI VCN IP Native CNI.  │
+│  Outbound backup traffic routes through the IGW.      │
 └──────────────────────────────────────────────────────┘
 ```
 
 ### Resources Created
 
-- **Networking**: VCN, Internet Gateway, NAT Gateway, 4 subnets (API endpoint, worker nodes, load balancers, PostgreSQL private), security lists, route tables
+- **Networking**: VCN, Internet Gateway, 3 subnets (API endpoint, worker nodes, load balancers), 2 security lists, route table
 - **OKE Cluster**: Basic cluster with OCI VCN IP Native CNI, public API endpoint
-- **Node Pool**: 4x VM.Standard.A1.Flex (ARM/Ampere) with OKE credential provider for OCIR
+- **Node Pool**: 4x VM.Standard.A1.Flex (ARM/Ampere) with OKE credential provider for OCIR. PostgreSQL pods run inside this pool via CNPG operator.
 - **IAM**: Dynamic group for worker nodes + policy for OCIR image pull access
 - **Backups**: OCI Object Storage bucket for PostgreSQL WAL archives
+- **All resources are OCI Always Free Tier eligible**
 
 ## Prerequisites
 

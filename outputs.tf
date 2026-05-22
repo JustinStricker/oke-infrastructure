@@ -28,16 +28,6 @@ output "vcn_id" {
   value       = oci_core_vcn.this.id
 }
 
-output "postgres_subnet_id" {
-  description = "The OCID of the private PostgreSQL subnet."
-  value       = oci_core_subnet.postgres_private.id
-}
-
-output "postgres_subnet_cidr" {
-  description = "CIDR block of the private PostgreSQL subnet."
-  value       = oci_core_subnet.postgres_private.cidr_block
-}
-
 output "node_subnet_id" {
   description = "The OCID of the worker node subnet."
   value       = oci_core_subnet.node.id
