@@ -1,71 +1,206 @@
-# OKE Cluster Deployment with Terraform and GitHub Actions
+# OKE Infrastructure with OpenTofu + CloudNativePG
 
-This repository contains Terraform code to provision an Oracle Kubernetes Engine (OKE) cluster on Oracle Cloud Infrastructure (OCI). It is designed to be fully automated using a CI/CD pipeline with GitHub Actions.
+This repository provisions an Oracle Kubernetes Engine (OKE) cluster on OCI using **OpenTofu** (an open-source Terraform fork), and deploys PostgreSQL via the **CloudNativePG (CNPG) operator** inside the cluster.
 
-## Overview
+## Architecture
 
-The Terraform configuration will create the following resources:
-* A Virtual Cloud Network (VCN) with public subnets.
-* An Internet Gateway and associated Route Table for public access.
-* Three subnets for the Kubernetes API endpoint, worker nodes, and load balancers.
-* Detailed Security Lists to control traffic between subnets and the internet.
-* An OKE Cluster (Control Plane).
-* A Node Pool with compute instances (Worker Nodes) distributed across availability domains.
+```
+┌──────────────────────────────────────────────────────┐
+│                    VCN (10.0.0.0/16)                  │
+│                                                      │
+│  ┌──────────────────────────────────────────────────┐│
+│  │  Public Subnets                                   ││
+│  │  ┌──────────────┐  ┌────────────┐  ┌───────────┐ ││
+│  │  │ API Endpoint  │  │   Nodes    │  │ Service LB │ ││
+│  │  │ 10.0.0.0/28  │  │10.0.10.0/24│  │10.0.20.0/24│ ││
+│  │  └──────────────┘  └────────────┘  └───────────┘ ││
+│  └──────────────────────────────────────────────────┘│
+│                                                      │
+│  ┌──────────────────────────────────────────────────┐│
+│  │  Private Subnet                                   ││
+│  │  ┌────────────────────┐                           ││
+│  │  │ PostgreSQL (CNPG)  │                           ││
+│  │  │  10.0.30.0/24     │                           ││
+│  │  └────────────────────┘                           ││
+│  └──────────────────────────────────────────────────┘│
+└──────────────────────────────────────────────────────┘
+```
 
-The GitHub Actions workflow automates the deployment process, running `terraform plan` on pull requests and `terraform apply` on pushes to the `main` branch.
+### Resources Created
+
+- **Networking**: VCN, Internet Gateway, NAT Gateway, 4 subnets (API endpoint, worker nodes, load balancers, PostgreSQL private), security lists, route tables
+- **OKE Cluster**: Basic cluster with OCI VCN IP Native CNI, public API endpoint
+- **Node Pool**: 4x VM.Standard.A1.Flex (ARM/Ampere) with OKE credential provider for OCIR
+- **IAM**: Dynamic group for worker nodes + policy for OCIR image pull access
+- **Backups**: OCI Object Storage bucket for PostgreSQL WAL archives
 
 ## Prerequisites
 
-Before you begin, you will need the following:
-1.  An Oracle Cloud Infrastructure (OCI) account.
-2.  An OCI user with sufficient permissions to create the resources defined in `main.tf`.
-3.  An OCI API key pair for that user. You will need the private key content, the key's fingerprint, your user OCID, and your tenancy OCID.
-4.  A GitHub repository for this code.
+1. Oracle Cloud Infrastructure (OCI) account
+2. OCI user with permissions to create the resources above
+3. OCI API key (private key, fingerprint, user OCID, tenancy OCID)
+4. GitHub repository with the following secrets configured:
 
-## Setup for Automation
+| Secret | Description |
+|--------|-------------|
+| `OCI_COMPARTMENT_OCID` | Compartment where resources will be created |
+| `OCI_TENANCY_OCID` | Your tenancy OCID |
+| `OCI_USER_OCID` | API user OCID |
+| `OCI_FINGERPRINT` | API key fingerprint |
+| `OCI_PRIVATE_KEY` | Full PEM-format API private key |
+| `OCI_REGION` | OCI region (e.g., `us-ashburn-1`) |
 
-To enable the GitHub Actions workflow, you must store your OCI credentials as encrypted secrets in your repository.
+## Quick Start
 
-1.  Navigate to your GitHub repository's **Settings > Secrets and variables > Actions**.
-2.  Click **New repository secret** for each of the secrets listed below.
-
-### Required GitHub Secrets
-
-* `OCI_COMPARTMENT_OCID`: The OCID of the compartment where the OKE cluster will be created.
-* `OCI_TENANCY_OCID`: Your OCI tenancy's OCID.
-* `OCI_USER_OCID`: The OCID of the user for API authentication.
-* `OCI_FINGERPRINT`: The fingerprint of your API public key.
-* `OCI_PRIVATE_KEY`: The **full content** of your PEM-formatted API private key file.
-* `OCI_REGION`: The OCI region you are deploying to (e.g., `us-ashburn-1`).
-
-## How It Works
-
-The CI/CD pipeline is defined in `.github/workflows/main.yml`.
-
-* **On Pull Request:** When a pull request is opened targeting the `main` branch, the workflow will run `terraform init` and `terraform plan`. This provides a preview of the infrastructure changes, which you can review directly in the pull request's "Checks" tab. No changes are applied at this stage.
-* **On Push to `main`:** After a pull request is merged, the workflow runs again on the `main` branch. This time, it will execute `terraform apply -auto-approve`, which provisions or updates the infrastructure on OCI.
-
-## Connecting to Your Cluster
-
-Once the `terraform apply` job has completed successfully, you can configure `kubectl` to connect to your new OKE cluster.
-
-1.  **Install the OCI CLI:** Follow the [official instructions](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliinstall.htm) to install and configure the OCI CLI.
-2.  **Get Cluster OCID:** Find the OCID of your cluster from the OCI console or from the Terraform output.
-3.  **Generate Kubeconfig:** Run the following OCI CLI command to generate the `kubeconfig` file needed to access your cluster:
-
-    ```sh
-    oci ce cluster create-kubeconfig --cluster-id <your_cluster_ocid> --file $HOME/.kube/config --region <your_region> --token-version 2.0.0
-    ```
-
-4.  **Verify Connection:** Test your connection to the cluster:
-    ```sh
-    kubectl get nodes
-    ```
-
-## Tearing Down the Infrastructure
-
-To destroy all the resources created by this Terraform configuration, you can run the following command locally (after configuring your environment with OCI credentials):
+### 1. Deploy Infrastructure
 
 ```sh
-terraform destroy
+# Copy and fill in your compartment details
+cp terraform.tfvars.example terraform.tfvars
 
+# Initialize and apply
+tofu init
+tofu plan
+tofu apply
+```
+
+### 2. Configure kubectl
+
+```sh
+oci ce cluster create-kubeconfig \
+  --cluster-id $(tofu output -raw cluster_id) \
+  --file $HOME/.kube/config \
+  --region us-ashburn-1 \
+  --token-version 2.0.0
+
+kubectl get nodes
+```
+
+### 3. Install CloudNativePG Operator
+
+```sh
+./k8s/postgres/install-operator.sh
+```
+
+### 4. Deploy PostgreSQL
+
+```sh
+./scripts/reset-postgres.sh
+```
+
+### 5. Connect to PostgreSQL
+
+```sh
+# Port-forward the primary PostgreSQL service
+kubectl port-forward svc/postgres-cluster-rw 5432:5432 -n postgres
+
+# Connect in another terminal
+psql -h localhost -U postgres
+```
+
+> **Note**: The default PostgreSQL user is `postgres`. The password is auto-generated by CNPG. Retrieve it with:
+> ```sh
+> kubectl get secret postgres-cluster-app -n postgres -o jsonpath='{.data.password}' | base64 -d
+> ```
+
+## CI/CD Pipelines
+
+Three GitHub Actions workflows automate infrastructure management:
+
+### Apply (`apply.yml`)
+
+| Trigger | Action |
+|---------|--------|
+| Pull request to `main` | `tofu plan` (preview changes) |
+| Push/merge to `main` | `tofu apply` (provision infrastructure) |
+
+### Manual Destroy (`destroy.yml`)
+
+Triggered manually from the GitHub Actions UI:
+1. Go to **Actions → Destroy Infrastructure → Run workflow**
+2. Select environment (`dev` or `staging`)
+3. Type `destroy dev` (or `destroy staging`) to confirm
+
+### Nightly Destroy (`scheduled-destroy.yml`)
+
+Runs automatically at 11 PM Eastern (Mon–Fri) against the `dev` environment to save OCI costs. The infrastructure is recreated the next morning when you push to `main`.
+
+## Development Workflow
+
+```sh
+# 1. Iterate on Terraform changes
+tofu plan                    # Preview changes
+tofu apply                   # Apply changes
+
+# 2. Iterate on PostgreSQL config
+# Edit k8s/postgres/cluster.yaml, then:
+./scripts/reset-postgres.sh   # Quick recreate (seconds, not minutes)
+
+# 3. Tear down for the day (or let the nightly workflow do it)
+tofu destroy
+```
+
+### Fast Iteration Tips
+
+- **Infrastructure changes** (`*.tf`): Run `tofu apply` once, then iterate on Kubernetes manifests
+- **PostgreSQL changes** (`cluster.yaml`): Use `kubectl delete/apply` — takes seconds, no Terraform needed
+- **Reset script**: `./scripts/reset-postgres.sh` handles the full delete/recreate cycle
+
+## File Structure
+
+```
+.
+├── main.tf                         # File index (intentionally empty)
+├── providers.tf                    # OpenTofu provider configuration
+├── variables.tf                    # Input variables
+├── networking.tf                   # VCN, subnets, security lists, gateways
+├── oke.tf                          # OKE cluster + node pool + data sources
+├── iam.tf                          # Dynamic group + OCIR policy
+├── backup.tf                       # Object Storage bucket for PostgreSQL backups
+├── backend.tf                      # Remote state backend (disabled by default)
+├── outputs.tf                      # Output values
+├── terraform.tfvars.example        # Example variable values
+│
+├── .github/workflows/
+│   ├── apply.yml                   # Plan on PR, apply on merge to main
+│   ├── destroy.yml                 # Manual destroy with confirmation gate
+│   └── scheduled-destroy.yml       # Nightly dev environment teardown
+│
+├── k8s/postgres/
+│   ├── cluster.yaml                # CloudNativePG PostgresCluster CRD
+│   └── install-operator.sh         # Helm-based CNPG operator installer
+│
+├── scripts/
+│   ├── bootstrap-state.sh          # Creates OCI Object Storage bucket for remote state
+│   └── reset-postgres.sh           # Deletes and recreates the PostgreSQL cluster
+│
+└── README.md
+```
+
+## Remote State (Optional)
+
+By default, state is stored locally. To enable shared remote state in OCI Object Storage:
+
+```sh
+# 1. Bootstrap the state bucket
+./scripts/bootstrap-state.sh <compartment_ocid>
+
+# 2. Edit backend.tf — uncomment and update the endpoint URL with your namespace
+# 3. Migrate local state to remote
+tofu init -migrate-state
+```
+
+## Tearing Down
+
+| Method | Command / Action |
+|--------|-----------------|
+| Local | `tofu destroy` |
+| GitHub UI | Actions → Destroy Infrastructure → Run workflow |
+| Scheduled | Automatic at 11 PM ET (Mon–Fri) |
+
+If PostgreSQL PVCs are attached, drain Kubernetes first:
+
+```sh
+kubectl delete -f k8s/postgres/cluster.yaml -n postgres --wait=true
+kubectl delete pvc -n postgres --all --wait=true
+tofu destroy

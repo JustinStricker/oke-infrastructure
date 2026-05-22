@@ -1,0 +1,110 @@
+name: Apply Infrastructure
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '*.tf'
+      - '*.tfvars'
+      - '*.tfvars.example'
+      - 'scripts/bootstrap-state.sh'
+  push:
+    branches: [main]
+    paths:
+      - '*.tf'
+      - '*.tfvars'
+      - '*.tfvars.example'
+      - 'scripts/bootstrap-state.sh'
+
+env:
+  TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+  TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+
+jobs:
+  plan:
+    name: OpenTofu Plan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.9.0
+
+      - name: OpenTofu Init
+        run: tofu init
+        env:
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+
+      - name: OpenTofu Format
+        run: tofu fmt -check -diff -no-color
+        continue-on-error: true
+
+      - name: OpenTofu Validate
+        run: tofu validate -no-color
+
+      - name: OpenTofu Plan
+        run: tofu plan -no-color -out=tfplan
+        env:
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+
+      - name: Upload Plan Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: tfplan
+
+  apply:
+    name: OpenTofu Apply
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.9.0
+
+      - name: OpenTofu Init
+        run: tofu init
+        env:
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+
+      - name: OpenTofu Plan
+        run: tofu plan -no-color -out=tfplan
+        env:
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+
+      - name: OpenTofu Apply
+        run: tofu apply -auto-approve tfplan
+        env:
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}

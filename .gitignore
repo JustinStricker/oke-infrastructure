@@ -1,4 +1,4 @@
-Local Terraform state files
+OpenTofu / Local state files
 *.tfstate
 *.tfstate.backup
 
@@ -9,14 +9,17 @@ Crash log files
 crash.log
 crash.*.log
 
-Terraform plan files
+OpenTofu plan files
 *.tfplan
+
+# OpenTofu overrides
+.opentofulock.hcl
 
 Infracost files
 .infracost/
 *.infracost.json
 
-Terraform variable definition files
+OpenTofu variable definition files
 These often contain sensitive information.
 If you need to version your variables, consider a ".tfvars.example" file.
 *.tfvars

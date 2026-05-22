@@ -1,0 +1,64 @@
+name: Destroy Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to destroy'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+      confirm:
+        description: 'Type "destroy <environment>" to confirm'
+        required: true
+
+env:
+  TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+  TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+
+jobs:
+  destroy:
+    name: OpenTofu Destroy
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    if: github.event.inputs.confirm == format('destroy {0}', github.event.inputs.environment)
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.9.0
+
+      - name: OpenTofu Init
+        run: tofu init
+        env:
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+
+      - name: OpenTofu Plan Destroy
+        run: tofu plan -destroy -no-color -out=tfplan
+        env:
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+
+      - name: OpenTofu Destroy
+        run: tofu apply -auto-approve tfplan
+        env:
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
