@@ -20,7 +20,6 @@ jobs:
   destroy:
     name: Destroy PostgreSQL Cluster
     runs-on: ubuntu-latest
-    environment: production
     if: github.event.inputs.confirm == 'destroy postgres'
 
     steps:

@@ -13,7 +13,6 @@ jobs:
   destroy:
     name: Scheduled Dev Destroy
     runs-on: ubuntu-latest
-    environment: dev
 
     steps:
       - uses: actions/checkout@v4

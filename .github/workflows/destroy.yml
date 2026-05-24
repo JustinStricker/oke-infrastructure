@@ -3,16 +3,8 @@ name: Destroy Infrastructure
 on:
   workflow_dispatch:
     inputs:
-      environment:
-        description: 'Environment to destroy'
-        required: true
-        default: 'dev'
-        type: choice
-        options:
-          - dev
-          - staging
       confirm:
-        description: 'Type "destroy <environment>" to confirm'
+        description: 'Type "destroy" to confirm'
         required: true
 
 env:
@@ -23,8 +15,7 @@ jobs:
   destroy:
     name: OpenTofu Destroy
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment }}
-    if: github.event.inputs.confirm == format('destroy {0}', github.event.inputs.environment)
+    if: github.event.inputs.confirm == 'destroy'
 
     steps:
       - uses: actions/checkout@v4
