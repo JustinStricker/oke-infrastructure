@@ -106,21 +106,42 @@ psql -h localhost -U postgres
 
 ## CI/CD Pipelines
 
-Three GitHub Actions workflows automate infrastructure management:
+Five GitHub Actions workflows automate the full lifecycle — provisioning the OKE infrastructure, deploying PostgreSQL on top of it, and tearing everything down.
 
 ### Apply (`apply.yml`)
 
 | Trigger | Action |
 |---------|--------|
+| Manual (`workflow_dispatch`) | `tofu apply` via GitHub Actions UI |
 | Pull request to `main` | `tofu plan` (preview changes) |
 | Push/merge to `main` | `tofu apply` (provision infrastructure) |
 
-### Manual Destroy (`destroy.yml`)
+Runs `tofu fmt -check`, `tofu validate`, `tofu plan` on PRs, and `tofu apply` on merge to `main` or manual trigger. This provisions the VCN, OKE cluster, node pool, IAM policies, and backup bucket.
+
+### Deploy PostgreSQL (`deploy-postgresql.yml`)
+
+Triggered manually from the GitHub Actions UI:
+1. Go to **Actions → Deploy PostgreSQL → Run workflow**
+2. Optionally override the Kubernetes namespace (default: `postgres`)
+
+Installs the CloudNativePG operator via Helm into `cnpg-system`, then applies the `k8s/postgres/cluster.yaml` manifest to create the PostgreSQL cluster. Requires the OKE infrastructure to already be provisioned.
+
+### Manual Destroy Infrastructure (`destroy.yml`)
 
 Triggered manually from the GitHub Actions UI:
 1. Go to **Actions → Destroy Infrastructure → Run workflow**
 2. Select environment (`dev` or `staging`)
 3. Type `destroy dev` (or `destroy staging`) to confirm
+
+Runs `tofu plan -destroy` followed by `tofu apply` to tear down all infrastructure resources. **If PostgreSQL PVCs exist, drain them first** (see "Tearing Down" below).
+
+### Destroy PostgreSQL (`destroy-postgresql.yml`)
+
+Triggered manually from the GitHub Actions UI:
+1. Go to **Actions → Destroy PostgreSQL → Run workflow**
+2. Type `destroy postgres` to confirm
+
+Deletes the PostgreSQL cluster and all PVCs via kubectl. Run this before destroying the infrastructure to leave the OKE cluster clean for recreation.
 
 ### Nightly Destroy (`scheduled-destroy.yml`)
 
@@ -164,8 +185,10 @@ tofu destroy
 │
 ├── .github/workflows/
 │   ├── apply.yml                   # Plan on PR, apply on merge to main
-│   ├── destroy.yml                 # Manual destroy with confirmation gate
-│   └── scheduled-destroy.yml       # Nightly dev environment teardown
+│   ├── destroy.yml                 # Manual infra destroy with confirmation gate
+│   ├── scheduled-destroy.yml       # Nightly dev environment teardown
+│   ├── deploy-postgresql.yml       # Install CNPG operator + PostgreSQL
+│   └── destroy-postgresql.yml      # Tear down PostgreSQL cluster + PVCs
 │
 ├── k8s/postgres/
 │   ├── cluster.yaml                # CloudNativePG PostgresCluster CRD
@@ -196,12 +219,21 @@ tofu init -migrate-state
 | Method | Command / Action |
 |--------|-----------------|
 | Local | `tofu destroy` |
-| GitHub UI | Actions → Destroy Infrastructure → Run workflow |
+| GitHub UI (infra) | Actions → Destroy Infrastructure → Run workflow |
+| GitHub UI (postgres) | Actions → Destroy PostgreSQL → Run workflow |
 | Scheduled | Automatic at 11 PM ET (Mon–Fri) |
 
-If PostgreSQL PVCs are attached, drain Kubernetes first:
+The recommended teardown order is:
 
-```sh
-kubectl delete -f k8s/postgres/cluster.yaml -n postgres --wait=true
-kubectl delete pvc -n postgres --all --wait=true
-tofu destroy
+1. **Delete PostgreSQL** (so PVCs are released cleanly):
+   ```sh
+   kubectl delete -f k8s/postgres/cluster.yaml -n postgres --wait=true
+   kubectl delete pvc -n postgres --all --wait=true
+   ```
+   Or use the **Destroy PostgreSQL** GitHub Action.
+
+2. **Destroy infrastructure**:
+   ```sh
+   tofu destroy
+   ```
+   Or use the **Destroy Infrastructure** GitHub Action.
