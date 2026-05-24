@@ -1,0 +1,93 @@
+name: Destroy PostgreSQL
+
+on:
+  workflow_dispatch:
+    inputs:
+      namespace:
+        description: 'Kubernetes namespace containing PostgreSQL'
+        required: true
+        default: 'postgres'
+        type: string
+      confirm:
+        description: 'Type "destroy postgres" to confirm'
+        required: true
+
+env:
+  TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+  TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+
+jobs:
+  destroy:
+    name: Destroy PostgreSQL Cluster
+    runs-on: ubuntu-latest
+    environment: production
+    if: github.event.inputs.confirm == 'destroy postgres'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.9.0
+
+      - name: OpenTofu Init
+        run: tofu init
+        env:
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+
+      - name: Get Cluster OCID from OpenTofu
+        id: tf_output
+        run: |
+          CLUSTER_ID=$(tofu output -raw cluster_id)
+          echo "cluster_id=$CLUSTER_ID" >> $GITHUB_OUTPUT
+        env:
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+
+      - name: Set up OCI CLI
+        uses: oracle-actions/setup-oci-cli@v1.1
+        with:
+          tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          user: ${{ secrets.OCI_USER_OCID }}
+          fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          key: ${{ secrets.OCI_PRIVATE_KEY }}
+          region: ${{ secrets.OCI_REGION }}
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          oci ce cluster create-kubeconfig \
+            --cluster-id ${{ steps.tf_output.outputs.cluster_id }} \
+            --file $HOME/.kube/config \
+            --region ${{ secrets.OCI_REGION }} \
+            --token-version 2.0.0
+
+      - name: Delete PostgreSQL Cluster
+        run: |
+          echo "Deleting PostgreSQL cluster in namespace ${{ github.event.inputs.namespace }}..."
+          kubectl delete -f k8s/postgres/cluster.yaml \
+            -n ${{ github.event.inputs.namespace }} \
+            --wait=true 2>/dev/null || true
+
+      - name: Clean up PVCs
+        run: |
+          echo "Deleting remaining PVCs..."
+          kubectl delete pvc -n ${{ github.event.inputs.namespace }} \
+            --all --wait=true 2>/dev/null || true
+
+      - name: Verify deletion
+        run: |
+          echo "=== Remaining pods in ${{ github.event.inputs.namespace }} ==="
+          kubectl get pods -n ${{ github.event.inputs.namespace }} 2>/dev/null || echo "(namespace empty or gone)"
+          echo ""
+          echo "=== Remaining PVCs in ${{ github.event.inputs.namespace }} ==="
+          kubectl get pvc -n ${{ github.event.inputs.namespace }} 2>/dev/null || echo "(no PVCs)"

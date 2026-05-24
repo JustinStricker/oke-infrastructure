@@ -1,0 +1,112 @@
+name: Deploy PostgreSQL
+
+on:
+  workflow_dispatch:
+    inputs:
+      namespace:
+        description: 'Kubernetes namespace for PostgreSQL'
+        required: true
+        default: 'postgres'
+        type: string
+
+env:
+  TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+  TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+
+jobs:
+  deploy:
+    name: Deploy CNPG Operator + PostgreSQL Cluster
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.9.0
+
+      - name: OpenTofu Init
+        run: tofu init
+        env:
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+
+      - name: Get Cluster OCID from OpenTofu
+        id: tf_output
+        run: |
+          CLUSTER_ID=$(tofu output -raw cluster_id)
+          echo "cluster_id=$CLUSTER_ID" >> $GITHUB_OUTPUT
+          echo "Cluster OCID: $CLUSTER_ID"
+        env:
+          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+
+      - name: Set up OCI CLI
+        uses: oracle-actions/setup-oci-cli@v1.1
+        with:
+          tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          user: ${{ secrets.OCI_USER_OCID }}
+          fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          key: ${{ secrets.OCI_PRIVATE_KEY }}
+          region: ${{ secrets.OCI_REGION }}
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          oci ce cluster create-kubeconfig \
+            --cluster-id ${{ steps.tf_output.outputs.cluster_id }} \
+            --file $HOME/.kube/config \
+            --region ${{ secrets.OCI_REGION }} \
+            --token-version 2.0.0
+
+      - name: Verify cluster access
+        run: kubectl get nodes
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Install CNPG Operator
+        run: |
+          helm repo add cnpg https://cloudnative-pg.github.io/charts
+          helm repo update
+          helm upgrade --install cnpg cnpg/cloudnative-pg \
+            --namespace cnpg-system \
+            --create-namespace \
+            --wait \
+            --timeout 5m
+
+      - name: Verify CNPG Operator
+        run: kubectl get pods -n cnpg-system
+
+      - name: Create PostgreSQL namespace
+        run: |
+          kubectl create namespace ${{ github.event.inputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy PostgreSQL Cluster
+        run: |
+          kubectl apply -f k8s/postgres/cluster.yaml -n ${{ github.event.inputs.namespace }}
+          echo "Waiting for PostgreSQL cluster to be ready..."
+          kubectl wait --for=condition=Ready \
+            pod -l postgresql-cluster=postgres-cluster \
+            -n ${{ github.event.inputs.namespace }} \
+            --timeout=300s || true
+
+      - name: Show PostgreSQL status
+        run: |
+          echo "=== Pods ==="
+          kubectl get pods -n ${{ github.event.inputs.namespace }}
+          echo ""
+          echo "=== Services ==="
+          kubectl get svc -n ${{ github.event.inputs.namespace }}
+          echo ""
+          echo "=== Connect via port-forward ==="
+          echo "kubectl port-forward svc/postgres-cluster-rw 5432:5432 -n ${{ github.event.inputs.namespace }}"
