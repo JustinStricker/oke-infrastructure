@@ -28,11 +28,11 @@ jobs:
     if: github.event_name == 'pull_request'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: opentofu/setup-opentofu@v1
+      - uses: opentofu/setup-opentofu@v2.0.1
         with:
-          tofu_version: 1.9.0
+          tofu_version: 1.12.0
 
       - name: OpenTofu Init
         run: tofu init
@@ -62,7 +62,7 @@ jobs:
           OCI_REGION: ${{ secrets.OCI_REGION }}
 
       - name: Upload Plan Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: tfplan
           path: tfplan
@@ -73,11 +73,11 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: opentofu/setup-opentofu@v1
+      - uses: opentofu/setup-opentofu@v2.0.1
         with:
-          tofu_version: 1.9.0
+          tofu_version: 1.12.0
 
       - name: OpenTofu Init
         run: tofu init

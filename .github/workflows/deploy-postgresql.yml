@@ -19,11 +19,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: opentofu/setup-opentofu@v1
+      - uses: opentofu/setup-opentofu@v2.0.1
         with:
-          tofu_version: 1.9.0
+          tofu_version: 1.12.0
 
       - name: OpenTofu Init
         run: tofu init
@@ -50,7 +50,7 @@ jobs:
           OCI_REGION: ${{ secrets.OCI_REGION }}
 
       - name: Set up OCI CLI
-        uses: oracle-actions/setup-oci-cli@v1.1
+        uses: oracle-actions/setup-oci-cli@v1.3.2
         with:
           tenancy: ${{ secrets.OCI_TENANCY_OCID }}
           user: ${{ secrets.OCI_USER_OCID }}
@@ -71,7 +71,7 @@ jobs:
         run: kubectl get nodes
 
       - name: Install Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5.0.0
 
       - name: Install CNPG Operator
         run: |
