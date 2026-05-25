@@ -24,6 +24,11 @@ env:
   OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
   OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
   OCI_REGION: ${{ secrets.OCI_REGION }}
+  OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
+  OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
+  OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+  OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}
+  OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
   TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
@@ -82,7 +87,7 @@ jobs:
         run: tofu plan -no-color -out=tfplan
 
       - name: Backup state before apply
-        run: cp terraform.tfstate ".terraform.tfstate.$(date +%s).backup"
+        run: tofu state pull > ".terraform.tfstate.$(date +%s).backup"
         continue-on-error: true
 
       - name: OpenTofu Apply
@@ -92,6 +97,9 @@ jobs:
         if: always() && (failure() || cancelled())
         run: |
           echo "=== Cleaning up after failed/cancelled apply ==="
+          tofu init -reconfigure \
+            -backend-config="region=${OCI_REGION}" \
+            -backend-config="endpoint=https://$(oci os ns get | jq -r '.data').compat.objectstorage.${OCI_REGION}.oraclecloud.com"
           tofu plan -destroy -no-color -out=destroy-tfplan \
             -exclude="oci_objectstorage_bucket.postgres_backups"
           tofu apply -auto-approve destroy-tfplan \
