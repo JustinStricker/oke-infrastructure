@@ -113,8 +113,7 @@ data "oci_identity_availability_domains" "this" {
 data "oci_core_images" "this" {
   compartment_id           = var.compartment_ocid
   operating_system         = "Oracle Linux"
-  operating_system_version = "7"
-  shape                    = var.node_shape
+  operating_system_version = "8"
   sort_by                  = "TIMECREATED"
   sort_order               = "DESC"
 
