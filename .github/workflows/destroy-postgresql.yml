@@ -43,16 +43,18 @@ jobs:
           tofu_version: 1.12.0
 
       - name: OpenTofu Init
-        run: tofu init
+        run: |
+          pip install oci-cli -q
+          OCI_NAMESPACE=$(oci os ns get | jq -r '.data')
+          tofu init \
+            -backend-config="region=${OCI_REGION}" \
+            -backend-config="endpoint=https://${OCI_NAMESPACE}.compat.objectstorage.${OCI_REGION}.oraclecloud.com"
 
       - name: Get Cluster OCID from OpenTofu
         id: tf_output
         run: |
           CLUSTER_ID=$(tofu output -raw cluster_id)
           echo "cluster_id=$CLUSTER_ID" >> $GITHUB_OUTPUT
-
-      - name: Install OCI CLI
-        run: pip install oci-cli
 
       - name: Configure kubeconfig
         run: |
