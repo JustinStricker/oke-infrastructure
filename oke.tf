@@ -117,6 +117,12 @@ data "oci_core_images" "this" {
   shape                    = var.node_shape
   sort_by                  = "TIMECREATED"
   sort_order               = "DESC"
+
+  filter {
+    name   = "display_name"
+    values = ["^.*OKE.*$"]
+    regex  = true
+  }
 }
 
 # --- OCI Object Storage namespace (for backup bucket) ---
