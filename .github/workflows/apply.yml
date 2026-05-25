@@ -102,9 +102,18 @@ jobs:
       - name: Import existing bucket into state
         run: |
           NAMESPACE=$(oci os ns get | jq -r '.data')
-          tofu import \
-            oci_objectstorage_bucket.postgres_backups \
-            "n/${NAMESPACE}/b/oke-postgres-backups-oke-infrastructure" || true
+          BUCKET="oke-postgres-backups-oke-infrastructure"
+          IMPORT_ID="n/${NAMESPACE}/b/${BUCKET}"
+          if oci os bucket get --namespace "${NAMESPACE}" --bucket-name "${BUCKET}" &>/dev/null; then
+            if ! tofu state list 2>/dev/null | grep -q "oci_objectstorage_bucket.postgres_backups"; then
+              echo "Bucket exists in OCI but not in state. Importing..."
+              tofu import oci_objectstorage_bucket.postgres_backups "${IMPORT_ID}"
+            else
+              echo "Bucket already in state; skipping import."
+            fi
+          else
+            echo "Bucket does not exist in OCI; skipping import."
+          fi
         continue-on-error: true
 
       - name: OpenTofu Apply
