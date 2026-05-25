@@ -43,12 +43,6 @@ resource "oci_core_route_table" "oke_nodes" {
   vcn_id         = oci_core_vcn.this.id
 
   route_rules {
-    description       = "Traffic to/from Oracle Services Network (OKE node registration)"
-    destination       = data.oci_core_services.all_region_services.services[0].cidr_block
-    destination_type  = "SERVICE_CIDR_BLOCK"
-    network_entity_id = oci_core_service_gateway.this.id
-  }
-  route_rules {
     description       = "Internet access for worker nodes"
     destination       = "0.0.0.0/0"
     destination_type  = "CIDR_BLOCK"
