@@ -103,5 +103,4 @@ jobs:
             -backend-config="endpoint=https://$(oci os ns get | jq -r '.data').compat.objectstorage.${OCI_REGION}.oraclecloud.com"
           tofu plan -destroy -no-color -out=destroy-tfplan \
             -exclude="oci_objectstorage_bucket.postgres_backups"
-          tofu apply -auto-approve destroy-tfplan \
-            -exclude="oci_objectstorage_bucket.postgres_backups"
+          tofu apply -auto-approve destroy-tfplan

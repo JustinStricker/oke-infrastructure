@@ -49,4 +49,4 @@ jobs:
         run: tofu plan -destroy -no-color -out=tfplan -exclude="oci_objectstorage_bucket.postgres_backups"
 
       - name: OpenTofu Destroy
-        run: tofu apply -auto-approve tfplan -exclude="oci_objectstorage_bucket.postgres_backups"
+        run: tofu apply -auto-approve tfplan

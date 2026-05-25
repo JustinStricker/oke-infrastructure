@@ -35,6 +35,21 @@ resource "oci_core_service_gateway" "this" {
   }
 }
 
+# --- Private Route Table (worker nodes, for OSN traffic via Service Gateway) ---
+
+resource "oci_core_route_table" "oke_nodes" {
+  compartment_id = var.compartment_ocid
+  display_name   = "oke-node-routetable-${var.cluster_name}"
+  vcn_id         = oci_core_vcn.this.id
+
+  route_rules {
+    description       = "Traffic to/from Oracle Services Network (OKE node registration)"
+    destination       = data.oci_core_services.all_region_services.services[0].cidr_block
+    destination_type  = "SERVICE_CIDR_BLOCK"
+    network_entity_id = oci_core_service_gateway.this.id
+  }
+}
+
 # --- Default Route Table (public subnets) ---
 
 resource "oci_core_default_route_table" "this" {
@@ -46,12 +61,6 @@ resource "oci_core_default_route_table" "this" {
     destination       = "0.0.0.0/0"
     destination_type  = "CIDR_BLOCK"
     network_entity_id = oci_core_internet_gateway.this.id
-  }
-  route_rules {
-    description       = "Traffic to/from Oracle Services Network (OKE node registration)"
-    destination       = data.oci_core_services.all_region_services.services[0].cidr_block
-    destination_type  = "SERVICE_CIDR_BLOCK"
-    network_entity_id = oci_core_service_gateway.this.id
   }
 }
 
@@ -74,7 +83,7 @@ resource "oci_core_subnet" "node" {
   display_name               = "oke-nodesubnet-${var.cluster_name}-regional"
   dns_label                  = "subf53e889a4"
   vcn_id                     = oci_core_vcn.this.id
-  route_table_id             = oci_core_vcn.this.default_route_table_id
+  route_table_id             = oci_core_route_table.oke_nodes.id
   security_list_ids          = [oci_core_security_list.node.id]
   prohibit_public_ip_on_vnic = false
 }
