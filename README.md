@@ -50,6 +50,8 @@ This repository provisions an Oracle Kubernetes Engine (OKE) cluster on OCI usin
 | `OCI_FINGERPRINT` | API key fingerprint |
 | `OCI_PRIVATE_KEY` | Full PEM-format API private key |
 | `OCI_REGION` | OCI region (e.g., `us-ashburn-1`) |
+| `AWS_ACCESS_KEY_ID` | Customer secret key ID for S3-compatible remote state backend |
+| `AWS_SECRET_ACCESS_KEY` | Customer secret key for S3-compatible remote state backend |
 
 ## Quick Start
 
@@ -59,8 +61,14 @@ This repository provisions an Oracle Kubernetes Engine (OKE) cluster on OCI usin
 # Copy and fill in your compartment details
 cp terraform.tfvars.example terraform.tfvars
 
-# Initialize and apply
-tofu init
+# Initialize with dynamic backend configuration
+OCI_NAMESPACE=$(oci os ns get | jq -r '.data')
+OCI_REGION=us-ashburn-1
+tofu init \
+  -backend-config="region=${OCI_REGION}" \
+  -backend-config="endpoint=https://${OCI_NAMESPACE}.compat.objectstorage.${OCI_REGION}.oraclecloud.com"
+
+# Plan and apply
 tofu plan
 tofu apply
 ```
@@ -126,26 +134,30 @@ Triggered manually from the GitHub Actions UI:
 
 Installs the CloudNativePG operator via Helm into `cnpg-system`, then applies the `k8s/postgres/cluster.yaml` manifest to create the PostgreSQL cluster. Requires the OKE infrastructure to already be provisioned.
 
-### Manual Destroy Infrastructure (`destroy.yml`)
+### Destroy Infrastructure (`destroy.yml`)
 
 Triggered manually from the GitHub Actions UI:
 1. Go to **Actions → Destroy Infrastructure → Run workflow**
-2. Select environment (`dev` or `staging`)
-3. Type `destroy dev` (or `destroy staging`) to confirm
+2. Type `destroy` to confirm
 
-Runs `tofu plan -destroy` followed by `tofu apply` to tear down all infrastructure resources. **If PostgreSQL PVCs exist, drain them first** (see "Tearing Down" below).
+Runs `tofu plan -destroy` followed by `tofu apply` to tear down all infrastructure resources (excluding the backup bucket, which has `prevent_destroy`). **If PostgreSQL PVCs exist, drain them first** (see "Tearing Down" below).
 
 ### Destroy PostgreSQL (`destroy-postgresql.yml`)
 
 Triggered manually from the GitHub Actions UI:
 1. Go to **Actions → Destroy PostgreSQL → Run workflow**
-2. Type `destroy postgres` to confirm
+2. Optionally override the Kubernetes namespace (default: `postgres`)
+3. Type `destroy postgres` to confirm
 
 Deletes the PostgreSQL cluster and all PVCs via kubectl. Run this before destroying the infrastructure to leave the OKE cluster clean for recreation.
 
-### Nightly Destroy (`scheduled-destroy.yml`)
+### Bootstrap Remote State (`bootstrap-state.yml`)
 
-Runs automatically at 11 PM Eastern (Mon–Fri) against the `dev` environment to save OCI costs. The infrastructure is recreated the next morning when you push to `main`.
+Triggered manually from the GitHub Actions UI:
+1. Go to **Actions → Bootstrap Remote State → Run workflow**
+2. Optionally override the cluster name (default: `oke-infrastructure`)
+
+Creates the OCI Object Storage bucket used for remote Terraform state. Run this once before the first `tofu init` if using CI. The workflow prints the correct endpoint URL for `backend.tf`.
 
 ## Development Workflow
 
@@ -158,7 +170,7 @@ tofu apply                   # Apply changes
 # Edit k8s/postgres/cluster.yaml, then:
 ./scripts/reset-postgres.sh   # Quick recreate (seconds, not minutes)
 
-# 3. Tear down for the day (or let the nightly workflow do it)
+# 3. Tear down
 tofu destroy
 ```
 
@@ -179,16 +191,16 @@ tofu destroy
 ├── oke.tf                          # OKE cluster + node pool + data sources
 ├── iam.tf                          # Dynamic group + OCIR policy
 ├── backup.tf                       # Object Storage bucket for PostgreSQL backups
-├── backend.tf                      # Remote state backend (disabled by default)
+├── backend.tf                      # Remote state backend (S3-compatible OCI Object Storage)
 ├── outputs.tf                      # Output values
 ├── terraform.tfvars.example        # Example variable values
 │
 ├── .github/workflows/
 │   ├── apply.yml                   # Plan on PR, apply on merge to main
 │   ├── destroy.yml                 # Manual infra destroy with confirmation gate
-│   ├── scheduled-destroy.yml       # Nightly dev environment teardown
 │   ├── deploy-postgresql.yml       # Install CNPG operator + PostgreSQL
-│   └── destroy-postgresql.yml      # Tear down PostgreSQL cluster + PVCs
+│   ├── destroy-postgresql.yml      # Tear down PostgreSQL cluster + PVCs
+│   └── bootstrap-state.yml         # Create remote state bucket
 │
 ├── k8s/postgres/
 │   ├── cluster.yaml                # CloudNativePG PostgresCluster CRD
@@ -196,22 +208,39 @@ tofu destroy
 │
 ├── scripts/
 │   ├── bootstrap-state.sh          # Creates OCI Object Storage bucket for remote state
-│   └── reset-postgres.sh           # Deletes and recreates the PostgreSQL cluster
+│   ├── deploy-postgres.sh          # Full deploy: kubeconfig → CNPG operator → PostgreSQL
+│   ├── reset-postgres.sh           # Deletes and recreates the PostgreSQL cluster
+│   └── setup-backup.sh             # Configures WAL archiving to OCI Object Storage
 │
 └── README.md
 ```
 
-## Remote State (Optional)
+## Remote State
 
-By default, state is stored locally. To enable shared remote state in OCI Object Storage:
+State is stored in OCI Object Storage (S3-compatible backend). The bucket must be created before first use:
 
 ```sh
 # 1. Bootstrap the state bucket
 ./scripts/bootstrap-state.sh <compartment_ocid>
 
-# 2. Edit backend.tf — uncomment and update the endpoint URL with your namespace
-# 3. Migrate local state to remote
-tofu init -migrate-state
+# The bootstrap script prints the namespace. Use it to initialize:
+
+# 2. Initialize with dynamic backend configuration
+OCI_NAMESPACE=<your-object-storage-namespace>
+OCI_REGION=<your-region>
+tofu init \
+  -backend-config="region=${OCI_REGION}" \
+  -backend-config="endpoint=https://${OCI_NAMESPACE}.compat.objectstorage.${OCI_REGION}.oraclecloud.com"
+```
+
+If you already have local state and want to migrate, add `-migrate-state`:
+
+```sh
+OCI_NAMESPACE=<your-object-storage-namespace>
+OCI_REGION=<your-region>
+tofu init -migrate-state \
+  -backend-config="region=${OCI_REGION}" \
+  -backend-config="endpoint=https://${OCI_NAMESPACE}.compat.objectstorage.${OCI_REGION}.oraclecloud.com"
 ```
 
 ## Tearing Down
@@ -221,7 +250,6 @@ tofu init -migrate-state
 | Local | `tofu destroy` |
 | GitHub UI (infra) | Actions → Destroy Infrastructure → Run workflow |
 | GitHub UI (postgres) | Actions → Destroy PostgreSQL → Run workflow |
-| Scheduled | Automatic at 11 PM ET (Mon–Fri) |
 
 The recommended teardown order is:
 

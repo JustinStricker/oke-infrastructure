@@ -52,6 +52,16 @@ echo "Applying PostgresCluster manifest..."
 kubectl apply -f "${MANIFEST}" -n "${NAMESPACE}"
 
 echo ""
+echo "=== Configuring Backups ==="
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "${SCRIPT_DIR}/setup-backup.sh" ]; then
+  "${SCRIPT_DIR}/setup-backup.sh" "${NAMESPACE}"
+else
+  echo "WARNING: setup-backup.sh not found — backups not configured."
+  echo "Run manually: ./scripts/setup-backup.sh ${NAMESPACE}"
+fi
+
+echo ""
 echo "=== Reset Complete ==="
 echo ""
 echo "Watch progress:"

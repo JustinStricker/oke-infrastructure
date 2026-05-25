@@ -13,31 +13,26 @@ spec:
 
   # Storage configuration
   storage:
-    size: 20Gi
+    size: 10Gi
     storageClass: oci-bv  # OCI Block Volume CSI storage class
 
   # Backup configuration using OCI Object Storage (S3-compatible)
-  # Prerequisites:
-  #   1. Create an OCI Object Storage bucket (done in backup.tf)
-  #   2. Generate a customer secret key for S3-compatible API
-  #   3. Create a Kubernetes secret with the credentials
-  #
-  # Uncomment and configure after setting up backup credentials:
-  #
-  # backup:
-  #   barmanObjectStore:
-  #     destinationPath: "s3://oke-postgres-backups-oke-infrastructure/"
-  #     endpointURL: "https://<namespace>.compat.objectstorage.<region>.oraclecloud.com"
-  #     s3Credentials:
-  #       accessKeyId:
-  #         name: cnpg-s3-creds
-  #         key: access-key
-  #       secretAccessKey:
-  #         name: cnpg-s3-creds
-  #         key: secret-key
-  #     wal:
-  #       compression: gzip
-  #   retentionPolicy: "30d"
+  # The backup bucket is created by backup.tf.
+  # The endpoint URL will be patched at deploy time by setup-backup.sh.
+  backup:
+    barmanObjectStore:
+      destinationPath: "s3://oke-postgres-backups-oke-infrastructure/"
+      endpointURL: "https://REPLACE_ME"
+      s3Credentials:
+        accessKeyId:
+          name: cnpg-s3-creds
+          key: access-key
+        secretAccessKey:
+          name: cnpg-s3-creds
+          key: secret-key
+      wal:
+        compression: gzip
+    retentionPolicy: "30d"
 
   # PostgreSQL configuration
   postgresql:

@@ -36,6 +36,7 @@ deploy-postgres:
 	kubectl apply -f k8s/postgres/cluster.yaml -n $(NAMESPACE)
 	kubectl wait --for=condition=Ready pod -l postgresql-cluster=postgres-cluster \
 		-n $(NAMESPACE) --timeout=300s
+	./scripts/setup-backup.sh $(NAMESPACE)
 
 destroy-postgres:
 	kubectl delete -f k8s/postgres/cluster.yaml -n $(NAMESPACE) --wait=true 2>/dev/null || true

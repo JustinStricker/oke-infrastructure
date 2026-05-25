@@ -39,17 +39,16 @@ jobs:
           tofu_version: 1.12.0
 
       - name: OpenTofu Init
-        run: tofu init
-
-      - name: Get Cluster OCID from OpenTofu
-        id: tf_output
         run: |
-          CLUSTER_ID=$(tofu output -raw cluster_id)
-          echo "cluster_id=$CLUSTER_ID" >> $GITHUB_OUTPUT
-          echo "Cluster OCID: $CLUSTER_ID"
+          pip install oci-cli -q
+          OCI_NAMESPACE=$(oci os ns get | jq -r '.data')
+          tofu init \
+            -backend-config="region=${OCI_REGION}" \
+            -backend-config="endpoint=https://${OCI_NAMESPACE}.compat.objectstorage.${OCI_REGION}.oraclecloud.com"
 
-      - name: Install OCI CLI
-        run: pip install oci-cli
+      - name: Get Cluster OCID
+        id: tf_output
+        run: echo "cluster_id=$(tofu output -raw cluster_id)" >> $GITHUB_OUTPUT
 
       - name: Configure kubeconfig
         run: |
@@ -76,29 +75,41 @@ jobs:
             --wait \
             --timeout 5m
 
-      - name: Verify CNPG Operator
-        run: kubectl get pods -n cnpg-system
-
-      - name: Create PostgreSQL namespace
-        run: |
-          kubectl create namespace ${{ github.event.inputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
-
       - name: Deploy PostgreSQL Cluster
         run: |
+          kubectl create namespace ${{ github.event.inputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
           kubectl apply -f k8s/postgres/cluster.yaml -n ${{ github.event.inputs.namespace }}
-          echo "Waiting for PostgreSQL cluster to be ready..."
           kubectl wait --for=condition=Ready \
             pod -l postgresql-cluster=postgres-cluster \
             -n ${{ github.event.inputs.namespace }} \
             --timeout=300s
 
+      - name: Configure Backups
+        run: |
+          chmod +x scripts/setup-backup.sh
+          ./scripts/setup-backup.sh \
+            ${{ github.event.inputs.namespace }} \
+            ${{ secrets.OCI_REGION }}
+
       - name: Show PostgreSQL status
+        if: success()
         run: |
           echo "=== Pods ==="
           kubectl get pods -n ${{ github.event.inputs.namespace }}
           echo ""
           echo "=== Services ==="
           kubectl get svc -n ${{ github.event.inputs.namespace }}
-          echo ""
-          echo "=== Connect via port-forward ==="
-          echo "kubectl port-forward svc/postgres-cluster-rw 5432:5432 -n ${{ github.event.inputs.namespace }}"
+
+      - name: Cleanup on failure
+        if: always() && (failure() || cancelled())
+        run: |
+          echo "=== Cleaning up after failed/cancelled deployment ==="
+          kubectl delete -f k8s/postgres/cluster.yaml \
+            -n ${{ github.event.inputs.namespace }} \
+            --wait=true 2>/dev/null || true
+          kubectl delete pvc -n ${{ github.event.inputs.namespace }} \
+            --all --wait=true 2>/dev/null || true
+          kubectl delete namespace ${{ github.event.inputs.namespace }} \
+            --wait=true 2>/dev/null || true
+          helm uninstall cnpg -n cnpg-system --wait 2>/dev/null || true
+          kubectl delete namespace cnpg-system --wait=true 2>/dev/null || true
