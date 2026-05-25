@@ -95,7 +95,7 @@ jobs:
           kubectl create namespace ${{ github.event.inputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
           kubectl apply -f k8s/postgres/cluster.yaml -n ${{ github.event.inputs.namespace }}
           kubectl wait --for=condition=Ready \
-            pod -l postgresql=postgres-cluster \
+            cluster/postgres-cluster \
             -n ${{ github.event.inputs.namespace }} \
             --timeout=300s
 

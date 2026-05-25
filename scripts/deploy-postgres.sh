@@ -117,7 +117,7 @@ kubectl apply -f "${MANIFEST}" -n "${NAMESPACE}"
 
 echo "Waiting for PostgreSQL cluster to be ready..."
 kubectl wait --for=condition=Ready \
-    pod -l postgresql=postgres-cluster \
+    cluster/postgres-cluster \
     -n "${NAMESPACE}" \
     --timeout=300s
 
