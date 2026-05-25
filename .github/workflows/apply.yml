@@ -91,6 +91,14 @@ jobs:
         run: tofu state pull > ".terraform.tfstate.$(date +%s).backup"
         continue-on-error: true
 
+      - name: Import existing bucket into state
+        run: |
+          NAMESPACE=$(oci os ns get | jq -r '.data')
+          tofu import \
+            oci_objectstorage_bucket.postgres_backups \
+            "n/${NAMESPACE}/b/oke-postgres-backups-oke-infrastructure" || true
+        continue-on-error: true
+
       - name: OpenTofu Apply
         run: tofu apply -auto-approve tfplan
 
