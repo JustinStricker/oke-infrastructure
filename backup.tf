@@ -8,4 +8,8 @@ resource "oci_objectstorage_bucket" "postgres_backups" {
   storage_tier          = "Standard"
   object_events_enabled = false
   versioning            = "Enabled"
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }

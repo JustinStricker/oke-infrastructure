@@ -5,6 +5,10 @@ resource "oci_identity_dynamic_group" "oke_nodes" {
   name           = "oke_nodes_dynamic_group_tf"
   description    = "Dynamic group for all OKE worker nodes in a compartment, managed by OpenTofu."
   matching_rule  = "ALL {instance.compartment.id = '${var.compartment_ocid}'}"
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 # --- Policy for OCIR Access ---
@@ -16,4 +20,8 @@ resource "oci_identity_policy" "oke_nodes_ocir" {
   statements = [
     "Allow dynamic-group ${oci_identity_dynamic_group.oke_nodes.name} to read repos in compartment id ${var.compartment_ocid}"
   ]
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
