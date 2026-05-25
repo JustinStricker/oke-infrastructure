@@ -121,7 +121,10 @@ jobs:
           echo "=== Cleaning up after failed/cancelled deployment ==="
           kubectl delete -f k8s/postgres/cluster.yaml \
             -n ${{ github.event.inputs.namespace }} \
-            --wait=true 2>/dev/null || true
+            --wait=true --timeout=120s 2>/dev/null || \
+          kubectl patch cluster postgres-cluster \
+            -n ${{ github.event.inputs.namespace }} \
+            -p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true
           kubectl delete objectstore postgres-cluster-backups \
             -n ${{ github.event.inputs.namespace }} \
             --wait=true 2>/dev/null || true

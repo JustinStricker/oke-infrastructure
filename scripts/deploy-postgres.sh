@@ -37,7 +37,10 @@ cleanup() {
     # Step 1: Delete PostgreSQL Cluster CR (so CNPG stops managing it)
     if kubectl get namespace "${NAMESPACE}" &>/dev/null 2>&1; then
         echo "Deleting PostgreSQL cluster..."
-        kubectl delete -f "${MANIFEST}" -n "${NAMESPACE}" --wait=true 2>/dev/null || true
+        kubectl delete -f "${MANIFEST}" -n "${NAMESPACE}" --wait=true --timeout=120s 2>/dev/null || \
+        kubectl patch cluster postgres-cluster \
+            -n "${NAMESPACE}" \
+            -p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true
         echo "Deleting ObjectStore CR..."
         kubectl delete objectstore postgres-cluster-backups -n "${NAMESPACE}" --wait=true 2>/dev/null || true
         echo "Deleting PVCs..."
