@@ -69,6 +69,16 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v5.0.0
 
+      - name: Install cert-manager
+        run: |
+          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.2/cert-manager.yaml
+          kubectl wait --for=condition=Available deployment cert-manager -n cert-manager --timeout=120s
+
+      - name: Install Barman Cloud Plugin
+        run: |
+          kubectl apply -f https://github.com/cloudnative-pg/plugin-barman-cloud/releases/download/v0.12.0/manifest.yaml
+          kubectl rollout status deployment -n cnpg-system barman-cloud --timeout=120s
+
       - name: Install CNPG Operator
         run: |
           helm repo add cnpg https://cloudnative-pg.github.io/charts
@@ -84,7 +94,7 @@ jobs:
           kubectl create namespace ${{ github.event.inputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
           kubectl apply -f k8s/postgres/cluster.yaml -n ${{ github.event.inputs.namespace }}
           kubectl wait --for=condition=Ready \
-            pod -l postgresql-cluster=postgres-cluster \
+            pod -l postgresql=postgres-cluster \
             -n ${{ github.event.inputs.namespace }} \
             --timeout=300s
 
@@ -109,6 +119,9 @@ jobs:
         run: |
           echo "=== Cleaning up after failed/cancelled deployment ==="
           kubectl delete -f k8s/postgres/cluster.yaml \
+            -n ${{ github.event.inputs.namespace }} \
+            --wait=true 2>/dev/null || true
+          kubectl delete objectstore postgres-cluster-backups \
             -n ${{ github.event.inputs.namespace }} \
             --wait=true 2>/dev/null || true
           kubectl delete pvc -n ${{ github.event.inputs.namespace }} \

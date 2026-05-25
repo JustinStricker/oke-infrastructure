@@ -76,6 +76,13 @@ jobs:
             -n ${{ github.event.inputs.namespace }} \
             --wait=true
 
+      - name: Delete ObjectStore
+        run: |
+          echo "Deleting ObjectStore CR..."
+          kubectl delete objectstore postgres-cluster-backups \
+            -n ${{ github.event.inputs.namespace }} \
+            --wait=true 2>/dev/null || echo "(ObjectStore not found, skipping)"
+
       - name: Clean up PVCs
         run: |
           echo "Deleting remaining PVCs..."

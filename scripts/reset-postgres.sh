@@ -33,6 +33,9 @@ if kubectl get namespace "${NAMESPACE}" &>/dev/null; then
   echo "Deleting PostgresCluster CRD..."
   kubectl delete -f "${MANIFEST}" -n "${NAMESPACE}" --wait=true 2>/dev/null || true
 
+  echo "Deleting ObjectStore CR..."
+  kubectl delete objectstore postgres-cluster-backups -n "${NAMESPACE}" --wait=true 2>/dev/null || true
+
   echo "Waiting for PVCs to be released..."
   sleep 5
 
