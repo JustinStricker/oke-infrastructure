@@ -99,7 +99,7 @@ resource "oci_containerengine_node_pool" "this" {
   }
 
   node_source_details {
-    image_id    = data.oci_core_images.this.images[0].id
+    image_id    = data.oci_containerengine_node_pool_option.this.sources[0].image_id
     source_type = "IMAGE"
   }
 }
@@ -110,18 +110,11 @@ data "oci_identity_availability_domains" "this" {
   compartment_id = var.compartment_ocid
 }
 
-data "oci_core_images" "this" {
-  compartment_id           = var.compartment_ocid
-  operating_system         = "Oracle Linux"
-  operating_system_version = "8"
-  sort_by                  = "TIMECREATED"
-  sort_order               = "DESC"
-
-  filter {
-    name   = "display_name"
-    values = ["^.*OKE.*$"]
-    regex  = true
-  }
+data "oci_containerengine_node_pool_option" "this" {
+  node_pool_option_id  = "all"
+  compartment_id       = var.compartment_ocid
+  node_pool_k8s_version = var.kubernetes_version
+  node_pool_os_arch     = "AARCH64"
 }
 
 # --- OCI Object Storage namespace (for backup bucket) ---
