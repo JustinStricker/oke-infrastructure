@@ -130,9 +130,9 @@ resource "oci_core_security_list" "node" {
     stateless = false
   }
   egress_security_rules {
-      description      = "Allow nodes to communicate with OKE to ensure correct start-up and continued functioning"
-      destination      = data.oci_core_services.all_region_services.services[0].cidr_block
-      destination_type = "SERVICE_CIDR_BLOCK"
+    description      = "Allow nodes to communicate with OKE to ensure correct start-up and continued functioning"
+    destination      = data.oci_core_services.all_region_services.services[0].cidr_block
+    destination_type = "SERVICE_CIDR_BLOCK"
     protocol         = "6"
     stateless        = false
   }
@@ -190,9 +190,9 @@ resource "oci_core_security_list" "kubernetes_api_endpoint" {
   display_name   = "oke-k8sApiEndpoint-${var.cluster_name}"
 
   egress_security_rules {
-      description      = "Allow Kubernetes Control Plane to communicate with OKE"
-      destination      = data.oci_core_services.all_region_services.services[0].cidr_block
-      destination_type = "SERVICE_CIDR_BLOCK"
+    description      = "Allow Kubernetes Control Plane to communicate with OKE"
+    destination      = data.oci_core_services.all_region_services.services[0].cidr_block
+    destination_type = "SERVICE_CIDR_BLOCK"
     protocol         = "6"
     stateless        = false
   }
