@@ -16,23 +16,15 @@ spec:
     size: 10Gi
     storageClass: oci-bv  # OCI Block Volume CSI storage class
 
-  # Backup configuration using OCI Object Storage (S3-compatible)
+  # Backup via Barman Cloud Plugin — references an ObjectStore CR
+  # created at deploy time by setup-backup.sh with the correct
+  # OCI Object Storage endpoint and credentials.
   # The backup bucket is created by backup.tf.
-  # The endpoint URL will be patched at deploy time by setup-backup.sh.
-  backup:
-    barmanObjectStore:
-      destinationPath: "s3://oke-postgres-backups-oke-infrastructure/"
-      endpointURL: "https://REPLACE_ME"
-      s3Credentials:
-        accessKeyId:
-          name: cnpg-s3-creds
-          key: access-key
-        secretAccessKey:
-          name: cnpg-s3-creds
-          key: secret-key
-      wal:
-        compression: gzip
-    retentionPolicy: "30d"
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: postgres-cluster-backups
 
   # PostgreSQL configuration
   postgresql:

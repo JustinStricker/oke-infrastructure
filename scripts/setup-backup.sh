@@ -2,15 +2,16 @@
 # ------------------------------------------------------------------
 # Configure PostgreSQL backups to OCI Object Storage.
 #
-# Creates the cnpg-s3-creds Kubernetes secret and patches the
-# Cluster's endpoint URL with the correct OCI Object Storage
-# S3-compatible endpoint.
+# Creates the cnpg-s3-creds Kubernetes secret and the Barman Cloud
+# ObjectStore CR for the CNPG Barman Cloud Plugin.
 #
 # Prerequisites:
 #   - kubectl configured for the OKE cluster
 #   - OCI CLI installed and configured
 #   - AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY set in environment
 #     (OCI Customer Secret Key for S3-compatible API access)
+#   - cert-manager installed in the cluster
+#   - Barman Cloud plugin (plugin-barman-cloud) installed
 #
 # Usage:
 #   ./scripts/setup-backup.sh [namespace] [region] [cluster_name]
@@ -28,12 +29,14 @@ REGION="${2:-${OCI_REGION:-${OCI_CLI_REGION:-us-ashburn-1}}}"
 CLUSTER_NAME="${3:-oke-infrastructure}"
 BUCKET_NAME="oke-postgres-backups-${CLUSTER_NAME}"
 SECRET_NAME="cnpg-s3-creds"
+OBJECTSTORE_NAME="postgres-cluster-backups"
 
 echo "=== Configuring PostgreSQL Backups ==="
 echo "Namespace:    ${NAMESPACE}"
 echo "Region:       ${REGION}"
 echo "Bucket:       ${BUCKET_NAME}"
 echo "Secret:       ${SECRET_NAME}"
+echo "ObjectStore:  ${OBJECTSTORE_NAME}"
 echo ""
 
 if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
@@ -57,15 +60,31 @@ kubectl create secret generic "${SECRET_NAME}" \
   --from-literal=secret-key="${AWS_SECRET_ACCESS_KEY}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-# Patch the PostgreSQL cluster with the correct endpoint URL
-echo "Patching PostgreSQL cluster endpoint URL..."
-kubectl patch cluster postgres-cluster \
-  --namespace "${NAMESPACE}" \
-  --type='json' \
-  -p="[{\"op\": \"replace\", \"path\": \"/spec/backup/barmanObjectStore/endpointURL\", \"value\": \"https://${ENDPOINT}\"}]"
+# Create or update the ObjectStore CR for the Barman Cloud Plugin
+echo "Creating/updating ObjectStore '${OBJECTSTORE_NAME}'..."
+kubectl apply --namespace "${NAMESPACE}" -f - <<EOF
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: ${OBJECTSTORE_NAME}
+spec:
+  configuration:
+    destinationPath: "s3://${BUCKET_NAME}/"
+    endpointURL: "https://${ENDPOINT}"
+    s3Credentials:
+      accessKeyId:
+        name: ${SECRET_NAME}
+        key: access-key
+      secretAccessKey:
+        name: ${SECRET_NAME}
+        key: secret-key
+    wal:
+      compression: gzip
+  retentionPolicy: "30d"
+EOF
 
 echo ""
 echo "=== Backup Configuration Complete ==="
 echo ""
 echo "Verify backup status:"
-echo "  kubectl get cluster postgres-cluster -n ${NAMESPACE} -o yaml | grep endpointURL"
+echo "  kubectl get objectstore ${OBJECTSTORE_NAME} -n ${NAMESPACE} -o yaml"

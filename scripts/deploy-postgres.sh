@@ -38,6 +38,8 @@ cleanup() {
     if kubectl get namespace "${NAMESPACE}" &>/dev/null 2>&1; then
         echo "Deleting PostgreSQL cluster..."
         kubectl delete -f "${MANIFEST}" -n "${NAMESPACE}" --wait=true 2>/dev/null || true
+        echo "Deleting ObjectStore CR..."
+        kubectl delete objectstore postgres-cluster-backups -n "${NAMESPACE}" --wait=true 2>/dev/null || true
         echo "Deleting PVCs..."
         kubectl delete pvc -n "${NAMESPACE}" --all --wait=true 2>/dev/null || true
         echo "Deleting namespace '${NAMESPACE}'..."
@@ -81,6 +83,18 @@ oci ce cluster create-kubeconfig \
 echo "Verifying cluster access..."
 kubectl get nodes
 
+# --- Install cert-manager & Barman Cloud Plugin ---
+echo ""
+echo "=== Installing cert-manager ==="
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.2/cert-manager.yaml
+kubectl wait --for=condition=Available deployment cert-manager -n cert-manager --timeout=120s
+
+echo ""
+echo "=== Installing Barman Cloud Plugin ==="
+kubectl create namespace cnpg-system --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f https://github.com/cloudnative-pg/plugin-barman-cloud/releases/download/v0.12.0/manifest.yaml
+kubectl rollout status deployment -n cnpg-system barman-cloud --timeout=120s
+
 # --- Install CNPG Operator ---
 echo ""
 echo "=== Installing CNPG Operator ==="
@@ -103,7 +117,7 @@ kubectl apply -f "${MANIFEST}" -n "${NAMESPACE}"
 
 echo "Waiting for PostgreSQL cluster to be ready..."
 kubectl wait --for=condition=Ready \
-    pod -l postgresql-cluster=postgres-cluster \
+    pod -l postgresql=postgres-cluster \
     -n "${NAMESPACE}" \
     --timeout=300s
 
