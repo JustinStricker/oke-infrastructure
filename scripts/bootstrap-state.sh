@@ -43,7 +43,7 @@ else
     --compartment-id "${COMPARTMENT_OCID}" \
     --name "${BUCKET_NAME}" \
     --namespace "${NAMESPACE}" \
-    --access-type "NoPublicAccess" \
+    --public-access-type "NoPublicAccess" \
     --storage-tier "Standard" \
     --versioning "Enabled"
   echo "Bucket created successfully."

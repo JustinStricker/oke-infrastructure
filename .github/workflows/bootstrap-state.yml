@@ -48,7 +48,7 @@ jobs:
               --compartment-id "${OCI_COMPARTMENT_OCID}" \
               --name "${BUCKET_NAME}" \
               --namespace "${NAMESPACE}" \
-              --access-type "NoPublicAccess" \
+              --public-access-type "NoPublicAccess" \
               --storage-tier "Standard" \
               --versioning "Enabled"
           fi
