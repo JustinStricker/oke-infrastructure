@@ -19,6 +19,11 @@ env:
   OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
   OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
   OCI_REGION: ${{ secrets.OCI_REGION }}
+  OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
+  OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
+  OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+  OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}
+  OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
   TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
   TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
 
@@ -44,14 +49,8 @@ jobs:
           CLUSTER_ID=$(tofu output -raw cluster_id)
           echo "cluster_id=$CLUSTER_ID" >> $GITHUB_OUTPUT
 
-      - name: Set up OCI CLI
-        uses: oracle-actions/setup-oci-cli@v1.3.2
-        with:
-          tenancy: ${{ secrets.OCI_TENANCY_OCID }}
-          user: ${{ secrets.OCI_USER_OCID }}
-          fingerprint: ${{ secrets.OCI_FINGERPRINT }}
-          key: ${{ secrets.OCI_PRIVATE_KEY }}
-          region: ${{ secrets.OCI_REGION }}
+      - name: Install OCI CLI
+        run: pip install oci-cli
 
       - name: Configure kubeconfig
         run: |
