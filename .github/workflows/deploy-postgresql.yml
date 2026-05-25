@@ -10,6 +10,12 @@ on:
         type: string
 
 env:
+  OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+  OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+  OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+  OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+  OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+  OCI_REGION: ${{ secrets.OCI_REGION }}
   TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
   TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
 
@@ -27,13 +33,6 @@ jobs:
 
       - name: OpenTofu Init
         run: tofu init
-        env:
-          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
-          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
-          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
-          OCI_REGION: ${{ secrets.OCI_REGION }}
 
       - name: Get Cluster OCID from OpenTofu
         id: tf_output
@@ -41,13 +40,6 @@ jobs:
           CLUSTER_ID=$(tofu output -raw cluster_id)
           echo "cluster_id=$CLUSTER_ID" >> $GITHUB_OUTPUT
           echo "Cluster OCID: $CLUSTER_ID"
-        env:
-          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
-          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
-          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
-          OCI_REGION: ${{ secrets.OCI_REGION }}
 
       - name: Set up OCI CLI
         uses: oracle-actions/setup-oci-cli@v1.3.2
@@ -97,7 +89,7 @@ jobs:
           kubectl wait --for=condition=Ready \
             pod -l postgresql-cluster=postgres-cluster \
             -n ${{ github.event.inputs.namespace }} \
-            --timeout=300s || true
+            --timeout=300s
 
       - name: Show PostgreSQL status
         run: |

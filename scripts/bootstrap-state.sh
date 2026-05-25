@@ -15,6 +15,12 @@
 
 set -euo pipefail
 
+if ! command -v jq &>/dev/null; then
+  echo "ERROR: jq is required but not installed."
+  echo "Install it with: brew install jq  (macOS)  or  apt install jq  (Linux)"
+  exit 1
+fi
+
 COMPARTMENT_OCID="${1:?Usage: $0 <compartment_ocid> [cluster_name]}"
 CLUSTER_NAME="${2:-oke-infrastructure}"
 BUCKET_NAME="oke-tfstate-${CLUSTER_NAME}"

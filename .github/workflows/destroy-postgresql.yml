@@ -13,6 +13,12 @@ on:
         required: true
 
 env:
+  OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+  OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+  OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+  OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+  OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+  OCI_REGION: ${{ secrets.OCI_REGION }}
   TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
   TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
 
@@ -31,26 +37,12 @@ jobs:
 
       - name: OpenTofu Init
         run: tofu init
-        env:
-          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
-          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
-          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
-          OCI_REGION: ${{ secrets.OCI_REGION }}
 
       - name: Get Cluster OCID from OpenTofu
         id: tf_output
         run: |
           CLUSTER_ID=$(tofu output -raw cluster_id)
           echo "cluster_id=$CLUSTER_ID" >> $GITHUB_OUTPUT
-        env:
-          OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
-          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
-          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
-          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
-          OCI_REGION: ${{ secrets.OCI_REGION }}
 
       - name: Set up OCI CLI
         uses: oracle-actions/setup-oci-cli@v1.3.2
@@ -75,13 +67,13 @@ jobs:
           echo "Deleting PostgreSQL cluster in namespace ${{ github.event.inputs.namespace }}..."
           kubectl delete -f k8s/postgres/cluster.yaml \
             -n ${{ github.event.inputs.namespace }} \
-            --wait=true 2>/dev/null || true
+            --wait=true
 
       - name: Clean up PVCs
         run: |
           echo "Deleting remaining PVCs..."
           kubectl delete pvc -n ${{ github.event.inputs.namespace }} \
-            --all --wait=true 2>/dev/null || true
+            --all --wait=true
 
       - name: Verify deletion
         run: |

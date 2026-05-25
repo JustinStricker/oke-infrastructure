@@ -1,0 +1,70 @@
+name: Bootstrap Remote State
+
+on:
+  workflow_dispatch:
+    inputs:
+      cluster_name:
+        description: 'Cluster name (matches backend.tf bucket name)'
+        required: false
+        default: 'oke-infrastructure'
+
+env:
+  OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+  OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+  OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+  OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+  OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+  OCI_REGION: ${{ secrets.OCI_REGION }}
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up OCI CLI
+        uses: oracle-actions/setup-oci-cli@v1.3.2
+        with:
+          tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          user: ${{ secrets.OCI_USER_OCID }}
+          fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          key: ${{ secrets.OCI_PRIVATE_KEY }}
+          region: ${{ secrets.OCI_REGION }}
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Create state bucket
+        id: create_bucket
+        run: |
+          CLUSTER_NAME="${{ github.event.inputs.cluster_name }}"
+          BUCKET_NAME="oke-tfstate-${CLUSTER_NAME}"
+          NAMESPACE=$(oci os ns get | jq -r '.data')
+
+          if oci os bucket get --namespace "${NAMESPACE}" --bucket-name "${BUCKET_NAME}" &>/dev/null; then
+            echo "Bucket '${BUCKET_NAME}' already exists."
+          else
+            echo "Creating bucket '${BUCKET_NAME}'..."
+            oci os bucket create \
+              --compartment-id "${OCI_COMPARTMENT_OCID}" \
+              --name "${BUCKET_NAME}" \
+              --namespace "${NAMESPACE}" \
+              --access-type "NoPublicAccess" \
+              --storage-tier "Standard" \
+              --versioning "Enabled"
+          fi
+
+          echo "namespace=${NAMESPACE}" >> $GITHUB_OUTPUT
+          echo "bucket=${BUCKET_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Print instructions
+        run: |
+          echo "========================================"
+          echo "  Bucket created: ${{ steps.create_bucket.outputs.bucket }}"
+          echo "  Namespace:      ${{ steps.create_bucket.outputs.namespace }}"
+          echo ""
+          echo "  Update backend.tf endpoint:"
+          echo "  https://${{ steps.create_bucket.outputs.namespace }}.compat.objectstorage.${{ env.OCI_REGION }}.oraclecloud.com"
+          echo ""
+          echo "  Then run: tofu init -migrate-state"
+          echo "========================================"

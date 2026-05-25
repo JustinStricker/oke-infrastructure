@@ -1,0 +1,50 @@
+TOFU := tofu
+NAMESPACE ?= postgres
+
+.PHONY: init plan apply destroy fmt validate output console
+.PHONY: deploy-postgres destroy-postgres reset-postgres install-operator
+
+init:
+	$(TOFU) init
+
+plan:
+	$(TOFU) plan -out=tfplan
+
+apply:
+	$(TOFU) apply tfplan
+
+destroy:
+	$(TOFU) destroy
+
+fmt:
+	$(TOFU) fmt
+
+validate:
+	$(TOFU) validate
+
+output:
+	$(TOFU) output
+
+console:
+	@echo "Run: oci ce cluster create-kubeconfig --cluster-id $$($(TOFU) output -raw cluster_id) --file ~/.kube/config --region us-ashburn-1 --token-version 2.0.0"
+	@echo "Then: kubectl get nodes"
+
+deploy-postgres:
+	kubectl create namespace $(NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
+	helm upgrade --install cnpg cnpg/cloudnative-pg \
+		--namespace cnpg-system --create-namespace --wait --timeout 5m
+	kubectl apply -f k8s/postgres/cluster.yaml -n $(NAMESPACE)
+	kubectl wait --for=condition=Ready pod -l postgresql-cluster=postgres-cluster \
+		-n $(NAMESPACE) --timeout=300s
+
+destroy-postgres:
+	kubectl delete -f k8s/postgres/cluster.yaml -n $(NAMESPACE) --wait=true 2>/dev/null || true
+	kubectl delete pvc -n $(NAMESPACE) --all --wait=true 2>/dev/null || true
+
+reset-postgres: destroy-postgres deploy-postgres
+
+install-operator:
+	helm repo add cnpg https://cloudnative-pg.github.io/charts 2>/dev/null || true
+	helm repo update
+	helm upgrade --install cnpg cnpg/cloudnative-pg \
+		--namespace cnpg-system --create-namespace --wait --timeout 5m
