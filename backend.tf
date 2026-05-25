@@ -13,7 +13,7 @@ terraform {
     bucket                      = "oke-tfstate-oke-infrastructure"
     key                         = "infrastructure/terraform.tfstate"
     region                      = "us-ashburn-1"
-    endpoint                    = "https://<your-namespace>.compat.objectstorage.us-ashburn-1.oraclecloud.com"
+    endpoint                    = "https://idrolupgk4or.compat.objectstorage.us-ashburn-1.oraclecloud.com"
     skip_region_validation      = true
     skip_credentials_validation = true
     skip_requesting_account_id  = true
