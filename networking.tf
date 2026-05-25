@@ -16,6 +16,25 @@ resource "oci_core_internet_gateway" "this" {
   vcn_id         = oci_core_vcn.this.id
 }
 
+# --- Service Gateway (required for OKE worker nodes to register) ---
+
+data "oci_core_services" "all_region_services" {
+  filter {
+    name   = "name"
+    values = ["All .* Services In Oracle Services Network"]
+    regex  = true
+  }
+}
+
+resource "oci_core_service_gateway" "this" {
+  compartment_id = var.compartment_ocid
+  display_name   = "oke-svcgw-${var.cluster_name}"
+  vcn_id         = oci_core_vcn.this.id
+  services {
+    service_id = data.oci_core_services.all_region_services.services[0].id
+  }
+}
+
 # --- Default Route Table (public subnets) ---
 
 resource "oci_core_default_route_table" "this" {
@@ -27,6 +46,12 @@ resource "oci_core_default_route_table" "this" {
     destination       = "0.0.0.0/0"
     destination_type  = "CIDR_BLOCK"
     network_entity_id = oci_core_internet_gateway.this.id
+  }
+  route_rules {
+    description       = "Traffic to/from Oracle Services Network (OKE node registration)"
+    destination       = data.oci_core_services.all_region_services.services[0].cidr_block
+    destination_type  = "SERVICE_CIDR_BLOCK"
+    network_entity_id = oci_core_service_gateway.this.id
   }
 }
 
@@ -98,8 +123,8 @@ resource "oci_core_security_list" "node" {
     destination      = "10.0.0.0/28"
     destination_type = "CIDR_BLOCK"
     icmp_options {
-      code = "4"
-      type = "3"
+      code = 4
+      type = 3
     }
     protocol  = "1"
     stateless = false
@@ -116,8 +141,8 @@ resource "oci_core_security_list" "node" {
     destination      = "0.0.0.0/0"
     destination_type = "CIDR_BLOCK"
     icmp_options {
-      code = "4"
-      type = "3"
+      code = 4
+      type = 3
     }
     protocol  = "1"
     stateless = false
@@ -138,8 +163,8 @@ resource "oci_core_security_list" "node" {
   ingress_security_rules {
     description = "Path discovery"
     icmp_options {
-      code = "4"
-      type = "3"
+      code = 4
+      type = 3
     }
     protocol  = "1"
     source    = "10.0.0.0/28"
@@ -183,8 +208,8 @@ resource "oci_core_security_list" "kubernetes_api_endpoint" {
     destination      = "10.0.10.0/24"
     destination_type = "CIDR_BLOCK"
     icmp_options {
-      code = "4"
-      type = "3"
+      code = 4
+      type = 3
     }
     protocol  = "1"
     stateless = false
@@ -210,8 +235,8 @@ resource "oci_core_security_list" "kubernetes_api_endpoint" {
   ingress_security_rules {
     description = "Path discovery"
     icmp_options {
-      code = "4"
-      type = "3"
+      code = 4
+      type = 3
     }
     protocol  = "1"
     source    = "10.0.10.0/24"
