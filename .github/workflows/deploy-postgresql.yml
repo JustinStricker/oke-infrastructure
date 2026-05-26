@@ -88,8 +88,9 @@ jobs:
         run: |
           if kubectl get namespace cnpg-system &>/dev/null 2>&1; then
             echo "Cleaning up residual state from prior run..."
-            chmod +x scripts/cleanup-cnpg.sh
+            chmod +x scripts/cleanup-cnpg.sh scripts/wait-for-namespace-gone.sh
             ./scripts/cleanup-cnpg.sh ${{ github.event.inputs.namespace }}
+            ./scripts/wait-for-namespace-gone.sh cnpg-system 120
           fi
 
       - name: Install Barman Cloud Plugin

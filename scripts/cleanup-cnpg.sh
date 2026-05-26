@@ -20,7 +20,7 @@
 set -euo pipefail
 
 NAMESPACE="${1:-postgres}"
-TIMEOUT="${2:-60}"
+TIMEOUT="${2:-120}"
 MANIFEST="k8s/postgres/cluster.yaml"
 
 echo "=== Cleaning up CNPG + cert-manager ==="

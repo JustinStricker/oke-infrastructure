@@ -31,6 +31,7 @@ fi
 if kubectl get namespace cnpg-system &>/dev/null 2>&1; then
     echo "Pre-deploy: cleaning up residual state..."
     "${SCRIPT_DIR}/cleanup-cnpg.sh" "${NAMESPACE}"
+    "${SCRIPT_DIR}/wait-for-namespace-gone.sh" cnpg-system 120
 fi
 
 cleanup() {

@@ -33,6 +33,7 @@ deploy-postgres:
 	@if kubectl get namespace cnpg-system &>/dev/null 2>&1; then \
 		echo "Cleaning up residual state from prior run..."; \
 		scripts/cleanup-cnpg.sh $(NAMESPACE) 2>/dev/null || true; \
+		scripts/wait-for-namespace-gone.sh cnpg-system 120; \
 	fi
 	kubectl create namespace $(NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
 	helm upgrade --install cnpg cnpg/cloudnative-pg \
@@ -61,6 +62,7 @@ install-barman-plugin:
 	@if kubectl get namespace cnpg-system &>/dev/null 2>&1; then \
 		echo "Cleaning up residual state from prior run..."; \
 		scripts/cleanup-cnpg.sh $(NAMESPACE) 2>/dev/null || true; \
+		scripts/wait-for-namespace-gone.sh cnpg-system 120; \
 	fi
 	@echo "Cleaning up orphaned cert-manager cluster-scoped resources..."
 	@kubectl get clusterrole -o name 2>/dev/null | grep -E '^clusterrole\.rbac\.authorization\.k8s\.io/cert-manager-' | xargs -r kubectl delete --ignore-not-found 2>/dev/null || true
