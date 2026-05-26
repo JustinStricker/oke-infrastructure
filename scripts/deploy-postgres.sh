@@ -23,12 +23,23 @@ force_delete_namespace() {
         kubectl delete namespace "$ns" --wait=true 2>/dev/null && return || true
     fi
 
+    echo "Namespace $ns is Terminating — cleaning up blockers..."
+    kubectl patch svc -n "$ns" --all \
+        -p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true
+    for kind in certificates.cert-manager.io issuers.cert-manager.io; do
+        kubectl get $kind -n "$ns" -o name 2>/dev/null | xargs -r kubectl patch \
+            -n "$ns" -p '{"metadata":{"finalizers":[]}}' --type=merge || true
+    done
     echo "Deleting namespace $ns with 30s timeout..."
     kubectl delete namespace "$ns" --timeout=30s 2>/dev/null || {
         echo "Timeout — patching namespace finalizer..."
         kubectl patch namespace "$ns" \
             -p '{"metadata":{"finalizers":[]}}' --type=merge
     }
+    while kubectl get namespace "$ns" &>/dev/null 2>&1; do
+        echo "Waiting for namespace $ns to be removed..."
+        sleep 5
+    done
 }
 
 # If cnpg-system is stuck Terminating from a prior failed run, clean it up first
