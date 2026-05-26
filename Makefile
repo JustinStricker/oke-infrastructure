@@ -65,8 +65,8 @@ install-barman-plugin:
 	@echo "Cleaning up orphaned cert-manager cluster-scoped resources..."
 	@kubectl get clusterrole -o name 2>/dev/null | grep -E '^clusterrole\.rbac\.authorization\.k8s\.io/cert-manager-' | xargs -r kubectl delete --ignore-not-found 2>/dev/null || true
 	@kubectl get clusterrolebinding -o name 2>/dev/null | grep -E '^clusterrolebinding\.rbac\.authorization\.k8s\.io/cert-manager-' | xargs -r kubectl delete --ignore-not-found 2>/dev/null || true
-	@kubectl get role -A -o name 2>/dev/null | grep '/cert-manager-' | xargs -r kubectl delete --ignore-not-found 2>/dev/null || true
-	@kubectl get rolebinding -A -o name 2>/dev/null | grep '/cert-manager-' | xargs -r kubectl delete --ignore-not-found 2>/dev/null || true
+	@kubectl get role --all-namespaces --no-headers 2>/dev/null | awk '$2 ~ /^cert-manager-/ {print $1, $2}' | while read ns name; do kubectl delete role -n "$$ns" "$$name" --ignore-not-found 2>/dev/null || true; done
+	@kubectl get rolebinding --all-namespaces --no-headers 2>/dev/null | awk '$2 ~ /^cert-manager-/ {print $1, $2}' | while read ns name; do kubectl delete rolebinding -n "$$ns" "$$name" --ignore-not-found 2>/dev/null || true; done
 	helm repo add jetstack https://charts.jetstack.io 2>/dev/null || true
 	helm repo update
 	helm upgrade --install cert-manager jetstack/cert-manager \
