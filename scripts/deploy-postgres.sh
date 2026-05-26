@@ -16,22 +16,33 @@
 
 set -euo pipefail
 
+_remove_ns_finalizers() {
+    local ns=$1
+    echo "Removing finalizers from resources in namespace $ns..."
+    local resources
+    resources=$(kubectl api-resources --verbs=patch --namespaced=true -o name 2>/dev/null || true)
+    for r in $resources; do
+        kubectl patch "$r" --all -n "$ns" \
+            -p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true
+    done
+    kubectl patch namespace "$ns" \
+        -p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true
+    sleep 3
+    kubectl delete namespace "$ns" --wait=true 2>/dev/null || true
+}
+
 force_delete_namespace() {
     local ns=$1
-    echo "Force-deleting namespace $ns..."
-    kubectl delete namespace "$ns" --wait=true 2>/dev/null || {
-        echo "Namespace $ns deletion hanging — removing finalizers..."
-        local resources
-        resources=$(kubectl api-resources --verbs=patch --namespaced=true -o name 2>/dev/null || true)
-        for r in $resources; do
-            kubectl patch "$r" --all -n "$ns" \
-                -p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true
-        done
-        kubectl patch namespace "$ns" \
-            -p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true
-        sleep 3
-        kubectl delete namespace "$ns" --wait=true 2>/dev/null || true
-    }
+    if kubectl get namespace "$ns" -o jsonpath='{.status.phase}' 2>/dev/null | grep -q Terminating; then
+        echo "Namespace $ns is already Terminating — removing finalizers..."
+        _remove_ns_finalizers "$ns"
+    else
+        echo "Deleting namespace $ns..."
+        kubectl delete namespace "$ns" --wait=true 2>/dev/null || {
+            echo "Namespace $ns deletion hanging — removing finalizers..."
+            _remove_ns_finalizers "$ns"
+        }
+    fi
 }
 
 # If cnpg-system is stuck Terminating from a prior failed run, clean it up first
