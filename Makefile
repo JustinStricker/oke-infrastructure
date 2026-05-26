@@ -30,6 +30,18 @@ console:
 	@echo "Then: kubectl get nodes"
 
 deploy-postgres:
+	@if kubectl get namespace cnpg-system -o jsonpath='{.status.phase}' 2>/dev/null | grep -q Terminating; then \
+		echo "cnpg-system is Terminating — forcing cleanup..."; \
+		kubectl api-resources --verbs=patch --namespaced=true -o name 2>/dev/null | \
+			while IFS= read -r r; do \
+				kubectl patch "$$r" --all -n cnpg-system \
+					-p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true; \
+			done; \
+		kubectl patch namespace cnpg-system \
+			-p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true; \
+		sleep 3; \
+		kubectl delete namespace cnpg-system --wait=true 2>/dev/null || true; \
+	fi
 	kubectl create namespace $(NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
 	helm upgrade --install cnpg cnpg/cloudnative-pg \
 		--namespace cnpg-system --create-namespace --wait --timeout 5m
@@ -48,6 +60,18 @@ reset-postgres: destroy-postgres deploy-postgres
 install-barman-plugin:
 	kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.2/cert-manager.yaml
 	kubectl wait --for=condition=Available deployment cert-manager -n cert-manager --timeout=120s
+	@if kubectl get namespace cnpg-system -o jsonpath='{.status.phase}' 2>/dev/null | grep -q Terminating; then \
+		echo "cnpg-system is Terminating — forcing cleanup..."; \
+		kubectl api-resources --verbs=patch --namespaced=true -o name 2>/dev/null | \
+			while IFS= read -r r; do \
+				kubectl patch "$$r" --all -n cnpg-system \
+					-p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true; \
+			done; \
+		kubectl patch namespace cnpg-system \
+			-p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true; \
+		sleep 3; \
+		kubectl delete namespace cnpg-system --wait=true 2>/dev/null || true; \
+	fi
 	kubectl create namespace cnpg-system --dry-run=client -o yaml | kubectl apply -f -
 	kubectl apply -f https://github.com/cloudnative-pg/plugin-barman-cloud/releases/download/v0.12.0/manifest.yaml
 	kubectl rollout status deployment -n cnpg-system barman-cloud --timeout=120s

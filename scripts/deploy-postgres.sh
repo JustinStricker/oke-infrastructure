@@ -16,6 +16,30 @@
 
 set -euo pipefail
 
+force_delete_namespace() {
+    local ns=$1
+    echo "Force-deleting namespace $ns..."
+    kubectl delete namespace "$ns" --wait=true 2>/dev/null || {
+        echo "Namespace $ns deletion hanging — removing finalizers..."
+        local resources
+        resources=$(kubectl api-resources --verbs=patch --namespaced=true -o name 2>/dev/null || true)
+        for r in $resources; do
+            kubectl patch "$r" --all -n "$ns" \
+                -p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true
+        done
+        kubectl patch namespace "$ns" \
+            -p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true
+        sleep 3
+        kubectl delete namespace "$ns" --wait=true 2>/dev/null || true
+    }
+}
+
+# If cnpg-system is stuck Terminating from a prior failed run, clean it up first
+if kubectl get namespace cnpg-system -o jsonpath='{.status.phase}' 2>/dev/null | grep -q Terminating; then
+    echo "Pre-deploy: cnpg-system is Terminating — force-removing it..."
+    force_delete_namespace cnpg-system
+fi
+
 NAMESPACE="${1:-postgres}"
 REGION="${2:-${OCI_REGION:-${OCI_CLI_REGION:-us-ashburn-1}}}"
 MANIFEST="k8s/postgres/cluster.yaml"
@@ -51,14 +75,17 @@ cleanup() {
         echo "Namespace '${NAMESPACE}' does not exist — skipping cluster cleanup."
     fi
 
-    # Step 2: Uninstall CNPG operator
-    if helm list -n cnpg-system &>/dev/null 2>&1; then
+    # Step 2: Clean up cnpg-system namespace (barman-cloud + CNPG operator)
+    if kubectl get namespace cnpg-system &>/dev/null 2>&1; then
         echo "Uninstalling CNPG operator..."
         helm uninstall cnpg -n cnpg-system --wait 2>/dev/null || true
+        echo "Deleting barman-cloud deployment..."
+        kubectl delete deployment -n cnpg-system barman-cloud 2>/dev/null || true
+        sleep 5
+        force_delete_namespace cnpg-system
     else
-        echo "CNPG operator not found — skipping."
+        echo "cnpg-system namespace does not exist — skipping."
     fi
-    kubectl delete namespace cnpg-system --wait=true 2>/dev/null || true
 
     echo "=== Cleanup complete ==="
     echo ""
