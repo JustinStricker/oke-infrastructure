@@ -50,6 +50,16 @@ deploy-postgres:
 	kubectl create namespace $(NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
 	helm upgrade --install cnpg cnpg/cloudnative-pg \
 		--namespace cnpg-system --create-namespace --wait --timeout 5m
+	@echo "Installing OCI Block Volume CSI Driver..."
+	oci ce cluster addon install --addon-name oci-bv-csi-driver \
+		--cluster-id $$(tofu output -raw cluster_id) \
+		--is-permanently-enabled true \
+		--wait-for-work-request 2>/dev/null || \
+	oci ce cluster addon update --addon-name oci-bv-csi-driver \
+		--cluster-id $$(tofu output -raw cluster_id) \
+		--is-permanently-enabled true \
+		--wait-for-work-request 2>/dev/null
+	kubectl get storageclass oci-bv
 	kubectl apply -f k8s/postgres/cluster.yaml -n $(NAMESPACE)
 	kubectl wait --for=condition=Ready pod -l postgresql=postgres-cluster \
 		-n $(NAMESPACE) --timeout=300s
