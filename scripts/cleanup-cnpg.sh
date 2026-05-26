@@ -27,14 +27,50 @@ echo "=== Cleaning up CNPG + cert-manager ==="
 echo "Namespace: ${NAMESPACE}"
 echo "Timeout:   ${TIMEOUT}s"
 
+# ──────────────────────────────────────────────────────────────────
+# Helper — force-clear all resources inside a stuck namespace and
+# remove any cluster-scoped references (APIServices) that point to
+# it.  This addresses the root cause of "Terminating" namespaces
+# that won't disappear: resources with finalizers whose controller
+# has been uninstalled.
+# ──────────────────────────────────────────────────────────────────
+force_clear_namespace_resources() {
+    local ns="$1"
+
+    # Delete APIServices whose backing service lives in this namespace
+    kubectl get apiservice --no-headers \
+            -o custom-columns="NAME:.metadata.name,NS:.spec.service.namespace" \
+            2>/dev/null \
+        | awk -v ns="$ns" '$2 == ns {print $1}' \
+        | while read -r api; do
+            kubectl delete apiservice "$api" --ignore-not-found 2>/dev/null || true
+        done
+
+    # Strip finalizers from and force-delete every namespaced resource
+    # inside the namespace.  This is deliberately broad so it catches
+    # CRD instances the script may not know about.
+    kubectl api-resources --verbs=list --namespaced -o name 2>/dev/null \
+        | while read -r resource; do
+            kubectl get "$resource" -n "$ns" -o name 2>/dev/null \
+                | while read -r obj; do
+                    kubectl patch "$obj" -n "$ns" \
+                        -p '{"metadata":{"finalizers":[]}}' \
+                        --type=merge 2>/dev/null || true
+                    kubectl delete "$obj" -n "$ns" \
+                        --force --grace-period=0 2>/dev/null || true
+                done
+        done
+}
+
 # Phase 1: Delete cluster-scoped webhooks
 # These are the root cause of stuck Terminating namespaces — the
 # API server tries to call the webhook to validate operations in
 # the namespace, but the webhook pod is gone → hang forever.
 echo ""
-echo "[1/5] Removing cert-manager webhooks..."
+echo "[1/5] Removing cert-manager + CNPG webhooks..."
 kubectl delete validatingwebhookconfiguration cert-manager-webhook --ignore-not-found 2>/dev/null || true
 kubectl delete mutatingwebhookconfiguration cert-manager-webhook --ignore-not-found 2>/dev/null || true
+kubectl delete validatingwebhookconfiguration cnpg-webhook --ignore-not-found 2>/dev/null || true
 
 # Phase 2: Delete resources in the postgres namespace
 echo ""
@@ -76,6 +112,9 @@ for ns in "${NAMESPACE}" cnpg-system cert-manager; do
         continue
     fi
 
+    echo "  Force-clearing all resources in namespace '${ns}'..."
+    force_clear_namespace_resources "${ns}" || true
+
     echo "  Deleting namespace '${ns}'..."
     kubectl delete namespace "${ns}" --timeout=30s --ignore-not-found 2>/dev/null || \
     kubectl patch namespace "${ns}" -p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true
@@ -86,6 +125,10 @@ for ns in "${NAMESPACE}" cnpg-system cert-manager; do
             echo "  Namespace '${ns}' deleted successfully."
             break
         fi
+        # Keep trying to clear resources and strip namespace finalizers
+        # in case new resources were re-created or we missed something.
+        force_clear_namespace_resources "${ns}" &>/dev/null || true
+        kubectl patch namespace "${ns}" -p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true
         echo "  Waiting for namespace '${ns}' to be removed... ($((i * 5))s)"
         sleep 5
     done
