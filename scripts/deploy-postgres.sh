@@ -16,38 +16,7 @@
 
 set -euo pipefail
 
-force_delete_namespace() {
-    local ns=$1
-
-    if ! kubectl get namespace "$ns" -o jsonpath='{.status.phase}' 2>/dev/null | grep -q Terminating; then
-        kubectl delete namespace "$ns" --wait=true 2>/dev/null && return || true
-    fi
-
-    echo "Namespace $ns is Terminating — cleaning up blockers..."
-    kubectl patch svc -n "$ns" --all \
-        -p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true
-    for kind in certificates.cert-manager.io issuers.cert-manager.io; do
-        kubectl get $kind -n "$ns" -o name 2>/dev/null | xargs -r kubectl patch \
-            -n "$ns" -p '{"metadata":{"finalizers":[]}}' --type=merge || true
-    done
-    echo "Deleting namespace $ns with 30s timeout..."
-    kubectl delete namespace "$ns" --timeout=30s 2>/dev/null || {
-        echo "Timeout — patching namespace finalizer..."
-        kubectl patch namespace "$ns" \
-            -p '{"metadata":{"finalizers":[]}}' --type=merge
-    }
-    while kubectl get namespace "$ns" &>/dev/null 2>&1; do
-        echo "Waiting for namespace $ns to be removed..."
-        sleep 5
-    done
-}
-
-# If cnpg-system is stuck Terminating from a prior failed run, clean it up first
-if kubectl get namespace cnpg-system -o jsonpath='{.status.phase}' 2>/dev/null | grep -q Terminating; then
-    echo "Pre-deploy: cnpg-system is Terminating — force-removing it..."
-    force_delete_namespace cnpg-system
-fi
-
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NAMESPACE="${1:-postgres}"
 REGION="${2:-${OCI_REGION:-${OCI_CLI_REGION:-us-ashburn-1}}}"
 MANIFEST="k8s/postgres/cluster.yaml"
@@ -58,6 +27,12 @@ if [ ! -f "${MANIFEST}" ]; then
     exit 1
 fi
 
+# Pre-deploy: clean up any residual state from a prior failed run
+if kubectl get namespace cnpg-system &>/dev/null 2>&1; then
+    echo "Pre-deploy: cleaning up residual state..."
+    "${SCRIPT_DIR}/cleanup-cnpg.sh" "${NAMESPACE}"
+fi
+
 cleanup() {
     local exit_code=$?
     if [ $exit_code -eq 0 ]; then
@@ -65,35 +40,7 @@ cleanup() {
     fi
     echo ""
     echo "=== DEPLOYMENT FAILED (exit code $exit_code) — Cleaning up ==="
-
-    # Step 1: Delete PostgreSQL Cluster CR (so CNPG stops managing it)
-    if kubectl get namespace "${NAMESPACE}" &>/dev/null 2>&1; then
-        echo "Deleting PostgreSQL cluster..."
-        kubectl delete -f "${MANIFEST}" -n "${NAMESPACE}" --wait=true --timeout=120s 2>/dev/null || \
-        kubectl patch cluster postgres-cluster \
-            -n "${NAMESPACE}" \
-            -p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true
-        echo "Deleting ObjectStore CR..."
-        kubectl delete objectstore postgres-cluster-backups -n "${NAMESPACE}" --wait=true 2>/dev/null || true
-        echo "Deleting PVCs..."
-        kubectl delete pvc -n "${NAMESPACE}" --all --wait=true 2>/dev/null || true
-        echo "Deleting namespace '${NAMESPACE}'..."
-        kubectl delete namespace "${NAMESPACE}" --wait=true 2>/dev/null || true
-    else
-        echo "Namespace '${NAMESPACE}' does not exist — skipping cluster cleanup."
-    fi
-
-    # Step 2: Clean up cnpg-system namespace
-    if kubectl get namespace cnpg-system &>/dev/null 2>&1; then
-        echo "Uninstalling CNPG operator..."
-        helm uninstall cnpg -n cnpg-system --wait 2>/dev/null || true
-        force_delete_namespace cnpg-system
-    else
-        echo "cnpg-system namespace does not exist — skipping."
-    fi
-
-    echo "=== Cleanup complete ==="
-    echo ""
+    "${SCRIPT_DIR}/cleanup-cnpg.sh" "${NAMESPACE}"
 }
 
 trap cleanup EXIT
@@ -121,8 +68,14 @@ kubectl get nodes
 # --- Install cert-manager & Barman Cloud Plugin ---
 echo ""
 echo "=== Installing cert-manager ==="
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.2/cert-manager.yaml
-kubectl wait --for=condition=Available deployment cert-manager -n cert-manager --timeout=120s
+helm repo add jetstack https://charts.jetstack.io 2>/dev/null || true
+helm repo update
+helm upgrade --install cert-manager jetstack/cert-manager \
+    --namespace cert-manager \
+    --create-namespace \
+    --set crds.enabled=true \
+    --wait \
+    --timeout 3m
 
 echo ""
 echo "=== Installing Barman Cloud Plugin ==="

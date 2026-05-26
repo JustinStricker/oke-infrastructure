@@ -30,22 +30,9 @@ console:
 	@echo "Then: kubectl get nodes"
 
 deploy-postgres:
-	@if kubectl get namespace cnpg-system -o jsonpath='{.status.phase}' 2>/dev/null | grep -q Terminating; then \
-		echo "cnpg-system is Terminating — cleaning up blockers..."; \
-		kubectl patch svc -n cnpg-system --all \
-			-p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true; \
-		for kind in certificates.cert-manager.io issuers.cert-manager.io; do \
-			kubectl get $$kind -n cnpg-system -o name 2>/dev/null | xargs -r kubectl patch \
-				-n cnpg-system -p '{"metadata":{"finalizers":[]}}' --type=merge || true; \
-		done; \
-		echo "Deleting cnpg-system namespace..."; \
-		kubectl delete namespace cnpg-system --timeout=30s 2>/dev/null || \
-		kubectl patch namespace cnpg-system \
-			-p '{"metadata":{"finalizers":[]}}' --type=merge || true; \
-		while kubectl get namespace cnpg-system &>/dev/null 2>&1; do \
-			echo "Waiting for cnpg-system namespace to be removed..."; \
-			sleep 5; \
-		done; \
+	@if kubectl get namespace cnpg-system &>/dev/null 2>&1; then \
+		echo "Cleaning up residual state from prior run..."; \
+		scripts/cleanup-cnpg.sh $(NAMESPACE) 2>/dev/null || true; \
 	fi
 	kubectl create namespace $(NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
 	helm upgrade --install cnpg cnpg/cloudnative-pg \
@@ -66,32 +53,20 @@ deploy-postgres:
 	./scripts/setup-backup.sh $(NAMESPACE)
 
 destroy-postgres:
-	kubectl delete -f k8s/postgres/cluster.yaml -n $(NAMESPACE) --wait=true 2>/dev/null || true
-	kubectl delete objectstore postgres-cluster-backups -n $(NAMESPACE) --wait=true 2>/dev/null || true
-	kubectl delete pvc -n $(NAMESPACE) --all --wait=true 2>/dev/null || true
+	scripts/cleanup-cnpg.sh $(NAMESPACE) 2>/dev/null || true
 
 reset-postgres: destroy-postgres deploy-postgres
 
 install-barman-plugin:
-	kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.2/cert-manager.yaml
-	kubectl wait --for=condition=Available deployment cert-manager -n cert-manager --timeout=120s
-	@if kubectl get namespace cnpg-system -o jsonpath='{.status.phase}' 2>/dev/null | grep -q Terminating; then \
-		echo "cnpg-system is Terminating — cleaning up blockers..."; \
-		kubectl patch svc -n cnpg-system --all \
-			-p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true; \
-		for kind in certificates.cert-manager.io issuers.cert-manager.io; do \
-			kubectl get $$kind -n cnpg-system -o name 2>/dev/null | xargs -r kubectl patch \
-				-n cnpg-system -p '{"metadata":{"finalizers":[]}}' --type=merge || true; \
-		done; \
-		echo "Deleting cnpg-system namespace..."; \
-		kubectl delete namespace cnpg-system --timeout=30s 2>/dev/null || \
-		kubectl patch namespace cnpg-system \
-			-p '{"metadata":{"finalizers":[]}}' --type=merge || true; \
-		while kubectl get namespace cnpg-system &>/dev/null 2>&1; do \
-			echo "Waiting for cnpg-system namespace to be removed..."; \
-			sleep 5; \
-		done; \
+	@if kubectl get namespace cnpg-system &>/dev/null 2>&1; then \
+		echo "Cleaning up residual state from prior run..."; \
+		scripts/cleanup-cnpg.sh $(NAMESPACE) 2>/dev/null || true; \
 	fi
+	helm repo add jetstack https://charts.jetstack.io 2>/dev/null || true
+	helm repo update
+	helm upgrade --install cert-manager jetstack/cert-manager \
+		--namespace cert-manager --create-namespace \
+		--set crds.enabled=true --wait --timeout 3m
 	kubectl create namespace cnpg-system --dry-run=client -o yaml | kubectl apply -f -
 	kubectl apply -f https://github.com/cloudnative-pg/plugin-barman-cloud/releases/download/v0.12.0/manifest.yaml
 	kubectl rollout status deployment -n cnpg-system barman-cloud --timeout=120s
