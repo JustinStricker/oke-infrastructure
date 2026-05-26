@@ -31,26 +31,10 @@ console:
 
 deploy-postgres:
 	@if kubectl get namespace cnpg-system -o jsonpath='{.status.phase}' 2>/dev/null | grep -q Terminating; then \
-		echo "cnpg-system is Terminating — removing finalizers..."; \
-		kubectl delete certificate barman-cloud-client barman-cloud-server -n cnpg-system --ignore-not-found 2>/dev/null || true; \
-		kubectl delete issuer selfsigned-issuer -n cnpg-system --ignore-not-found 2>/dev/null || true; \
-		kubectl delete deployment barman-cloud -n cnpg-system --ignore-not-found 2>/dev/null || true; \
-		kubectl delete all,secrets,configmaps,sa,roles,rolebindings --all -n cnpg-system --ignore-not-found 2>/dev/null || true; \
-		echo "Waiting for namespace to be removed..."; \
-		for i in 0 1 2 3 4 5 6 7 8 9; do \
-			if kubectl get namespace cnpg-system >/dev/null 2>&1; then \
-				sleep 3; \
-			else \
-				echo "cnpg-system deleted."; \
-				break; \
-			fi; \
-		done; \
-		if kubectl get namespace cnpg-system >/dev/null 2>&1; then \
-			echo "Namespace still stuck — patching finalizer..."; \
-			kubectl patch namespace cnpg-system -p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true; \
-			sleep 2; \
-			kubectl delete namespace cnpg-system --wait=true 2>/dev/null || true; \
-		fi; \
+		echo "cnpg-system is Terminating — deleting with 30s timeout..."; \
+		kubectl delete namespace cnpg-system --timeout=30s 2>/dev/null || \
+		kubectl patch namespace cnpg-system \
+			-p '{"metadata":{"finalizers":[]}}' --type=merge; \
 	fi
 	kubectl create namespace $(NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
 	helm upgrade --install cnpg cnpg/cloudnative-pg \
@@ -71,26 +55,10 @@ install-barman-plugin:
 	kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.2/cert-manager.yaml
 	kubectl wait --for=condition=Available deployment cert-manager -n cert-manager --timeout=120s
 	@if kubectl get namespace cnpg-system -o jsonpath='{.status.phase}' 2>/dev/null | grep -q Terminating; then \
-		echo "cnpg-system is Terminating — removing finalizers..."; \
-		kubectl delete certificate barman-cloud-client barman-cloud-server -n cnpg-system --ignore-not-found 2>/dev/null || true; \
-		kubectl delete issuer selfsigned-issuer -n cnpg-system --ignore-not-found 2>/dev/null || true; \
-		kubectl delete deployment barman-cloud -n cnpg-system --ignore-not-found 2>/dev/null || true; \
-		kubectl delete all,secrets,configmaps,sa,roles,rolebindings --all -n cnpg-system --ignore-not-found 2>/dev/null || true; \
-		echo "Waiting for namespace to be removed..."; \
-		for i in 0 1 2 3 4 5 6 7 8 9; do \
-			if kubectl get namespace cnpg-system >/dev/null 2>&1; then \
-				sleep 3; \
-			else \
-				echo "cnpg-system deleted."; \
-				break; \
-			fi; \
-		done; \
-		if kubectl get namespace cnpg-system >/dev/null 2>&1; then \
-			echo "Namespace still stuck — patching finalizer..."; \
-			kubectl patch namespace cnpg-system -p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true; \
-			sleep 2; \
-			kubectl delete namespace cnpg-system --wait=true 2>/dev/null || true; \
-		fi; \
+		echo "cnpg-system is Terminating — deleting with 30s timeout..."; \
+		kubectl delete namespace cnpg-system --timeout=30s 2>/dev/null || \
+		kubectl patch namespace cnpg-system \
+			-p '{"metadata":{"finalizers":[]}}' --type=merge; \
 	fi
 	kubectl create namespace cnpg-system --dry-run=client -o yaml | kubectl apply -f -
 	kubectl apply -f https://github.com/cloudnative-pg/plugin-barman-cloud/releases/download/v0.12.0/manifest.yaml

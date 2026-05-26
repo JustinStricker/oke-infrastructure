@@ -21,31 +21,14 @@ force_delete_namespace() {
 
     if ! kubectl get namespace "$ns" -o jsonpath='{.status.phase}' 2>/dev/null | grep -q Terminating; then
         kubectl delete namespace "$ns" --wait=true 2>/dev/null && return || true
-        echo "Namespace $ns deletion hanging..."
     fi
 
-    echo "Removing known blocking resources in namespace $ns..."
-    kubectl delete certificate barman-cloud-client barman-cloud-server \
-        -n "$ns" --ignore-not-found 2>/dev/null || true
-    kubectl delete issuer selfsigned-issuer \
-        -n "$ns" --ignore-not-found 2>/dev/null || true
-    kubectl delete deployment barman-cloud \
-        -n "$ns" --ignore-not-found 2>/dev/null || true
-    kubectl delete all,secrets,configmaps,sa,roles,rolebindings \
-        --all -n "$ns" --ignore-not-found 2>/dev/null || true
-
-    echo "Waiting for resource cleanup..."
-    sleep 5
-
-    if kubectl delete namespace "$ns" --wait=true 2>/dev/null; then
-        return
-    fi
-
-    echo "Namespace still stuck — patching namespace finalizer..."
-    kubectl patch namespace "$ns" \
-        -p '{"metadata":{"finalizers":[]}}' --type=merge 2>/dev/null || true
-    sleep 2
-    kubectl delete namespace "$ns" --wait=true 2>/dev/null || true
+    echo "Deleting namespace $ns with 30s timeout..."
+    kubectl delete namespace "$ns" --timeout=30s 2>/dev/null || {
+        echo "Timeout — patching namespace finalizer..."
+        kubectl patch namespace "$ns" \
+            -p '{"metadata":{"finalizers":[]}}' --type=merge
+    }
 }
 
 # If cnpg-system is stuck Terminating from a prior failed run, clean it up first
@@ -89,13 +72,10 @@ cleanup() {
         echo "Namespace '${NAMESPACE}' does not exist — skipping cluster cleanup."
     fi
 
-    # Step 2: Clean up cnpg-system namespace (barman-cloud + CNPG operator)
+    # Step 2: Clean up cnpg-system namespace
     if kubectl get namespace cnpg-system &>/dev/null 2>&1; then
         echo "Uninstalling CNPG operator..."
         helm uninstall cnpg -n cnpg-system --wait 2>/dev/null || true
-        echo "Deleting barman-cloud deployment..."
-        kubectl delete deployment -n cnpg-system barman-cloud 2>/dev/null || true
-        sleep 5
         force_delete_namespace cnpg-system
     else
         echo "cnpg-system namespace does not exist — skipping."
