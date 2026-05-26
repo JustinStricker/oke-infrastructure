@@ -63,8 +63,8 @@ install-barman-plugin:
 		scripts/cleanup-cnpg.sh $(NAMESPACE) 2>/dev/null || true; \
 	fi
 	@echo "Cleaning up orphaned cert-manager cluster-scoped resources..."
-	@kubectl delete clusterrole cert-manager-cainjector cert-manager-controller cert-manager-webhook --ignore-not-found 2>/dev/null || true
-	@kubectl delete clusterrolebinding cert-manager-cainjector cert-manager-controller cert-manager-webhook --ignore-not-found 2>/dev/null || true
+	@kubectl get clusterrole -o name 2>/dev/null | grep -E '^clusterrole\.rbac\.authorization\.k8s\.io/cert-manager-' | xargs -r kubectl delete --ignore-not-found 2>/dev/null || true
+	@kubectl get clusterrolebinding -o name 2>/dev/null | grep -E '^clusterrolebinding\.rbac\.authorization\.k8s\.io/cert-manager-' | xargs -r kubectl delete --ignore-not-found 2>/dev/null || true
 	helm repo add jetstack https://charts.jetstack.io 2>/dev/null || true
 	helm repo update
 	helm upgrade --install cert-manager jetstack/cert-manager \

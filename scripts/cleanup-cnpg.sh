@@ -62,8 +62,8 @@ helm uninstall cert-manager -n cert-manager --timeout=2m --wait 2>/dev/null || e
 # These survive namespace deletion and block future Helm installs.
 echo ""
 echo "[4/5] Cleaning up orphaned cert-manager cluster-scoped resources..."
-kubectl delete clusterrole cert-manager-cainjector cert-manager-controller cert-manager-webhook --ignore-not-found 2>/dev/null || true
-kubectl delete clusterrolebinding cert-manager-cainjector cert-manager-controller cert-manager-webhook --ignore-not-found 2>/dev/null || true
+kubectl get clusterrole -o name 2>/dev/null | grep -E '^clusterrole\.rbac\.authorization\.k8s\.io/cert-manager-' | xargs -r kubectl delete --ignore-not-found 2>/dev/null || true
+kubectl get clusterrolebinding -o name 2>/dev/null | grep -E '^clusterrolebinding\.rbac\.authorization\.k8s\.io/cert-manager-' | xargs -r kubectl delete --ignore-not-found 2>/dev/null || true
 
 # Phase 5: Delete namespaces with bounded wait
 echo ""
