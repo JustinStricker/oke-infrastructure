@@ -32,13 +32,13 @@ echo "Timeout:   ${TIMEOUT}s"
 # API server tries to call the webhook to validate operations in
 # the namespace, but the webhook pod is gone → hang forever.
 echo ""
-echo "[1/4] Removing cert-manager webhooks..."
+echo "[1/5] Removing cert-manager webhooks..."
 kubectl delete validatingwebhookconfiguration cert-manager-webhook --ignore-not-found 2>/dev/null || true
 kubectl delete mutatingwebhookconfiguration cert-manager-webhook --ignore-not-found 2>/dev/null || true
 
 # Phase 2: Delete resources in the postgres namespace
 echo ""
-echo "[2/4] Cleaning up PostgreSQL cluster resources..."
+echo "[2/5] Cleaning up PostgreSQL cluster resources..."
 if kubectl get namespace "${NAMESPACE}" &>/dev/null 2>&1; then
     if [ -f "${MANIFEST}" ]; then
         kubectl delete -f "${MANIFEST}" -n "${NAMESPACE}" --wait=true --timeout=120s 2>/dev/null || \
@@ -54,13 +54,20 @@ fi
 
 # Phase 3: Uninstall Helm releases (cleanly removes their CRDs, webhooks, etc.)
 echo ""
-echo "[3/4] Uninstalling Helm releases..."
+echo "[3/5] Uninstalling Helm releases..."
 helm uninstall cnpg -n cnpg-system --timeout=2m --wait 2>/dev/null || echo "  CNPG release not found — skipping."
 helm uninstall cert-manager -n cert-manager --timeout=2m --wait 2>/dev/null || echo "  cert-manager release not found — skipping."
 
-# Phase 4: Delete namespaces with bounded wait
+# Phase 4: Clean up orphaned cluster-scoped resources
+# These survive namespace deletion and block future Helm installs.
 echo ""
-echo "[4/4] Deleting namespaces..."
+echo "[4/5] Cleaning up orphaned cert-manager cluster-scoped resources..."
+kubectl delete clusterrole cert-manager-cainjector cert-manager-controller cert-manager-webhook --ignore-not-found 2>/dev/null || true
+kubectl delete clusterrolebinding cert-manager-cainjector cert-manager-controller cert-manager-webhook --ignore-not-found 2>/dev/null || true
+
+# Phase 5: Delete namespaces with bounded wait
+echo ""
+echo "[5/5] Deleting namespaces..."
 for ns in "${NAMESPACE}" cnpg-system cert-manager; do
     if ! kubectl get namespace "${ns}" &>/dev/null 2>&1; then
         echo "  Namespace '${ns}' does not exist — skipping."
