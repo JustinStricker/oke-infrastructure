@@ -39,14 +39,17 @@ deploy-postgres:
 	helm upgrade --install cnpg cnpg/cloudnative-pg \
 		--namespace cnpg-system --create-namespace --wait --timeout 5m
 	@echo "Installing OCI Block Volume CSI Driver..."
-	oci ce cluster addon install --addon-name oci-bv-csi-driver \
-		--cluster-id $$(tofu output -raw cluster_id) \
-		--is-permanently-enabled true \
-		--wait-for-work-request 2>/dev/null || \
-	oci ce cluster addon update --addon-name oci-bv-csi-driver \
-		--cluster-id $$(tofu output -raw cluster_id) \
-		--is-permanently-enabled true \
-		--wait-for-work-request 2>/dev/null
+	printf 'auth:\n  useInstancePrincipals: true\ncompartment: %s\nvcn: %s\n' \
+		"$$(tofu output -raw compartment_id)" \
+		"$$(tofu output -raw vcn_id)" > /tmp/oci-config.yaml
+	kubectl create secret generic oci-volume-provisioner -n kube-system \
+		--from-file=config.yaml=/tmp/oci-config.yaml \
+		--dry-run=client -o yaml | kubectl apply -f - 2>/dev/null || true
+	rm -f /tmp/oci-config.yaml
+	kubectl apply -f https://github.com/oracle/oci-cloud-controller-manager/releases/download/v1.34.0/oci-csi-node-rbac.yaml
+	kubectl apply -f https://github.com/oracle/oci-cloud-controller-manager/releases/download/v1.34.0/oci-csi-controller-driver.yaml
+	kubectl apply -f https://github.com/oracle/oci-cloud-controller-manager/releases/download/v1.34.0/oci-csi-node-driver.yaml
+	kubectl apply -f https://raw.githubusercontent.com/oracle/oci-cloud-controller-manager/master/manifests/container-storage-interface/storage-class.yaml
 	kubectl get storageclass oci-bv
 	kubectl apply -f k8s/postgres/cluster.yaml -n $(NAMESPACE)
 	kubectl wait --for=condition=Ready pod -l postgresql=postgres-cluster \

@@ -43,6 +43,11 @@ output "backup_bucket_namespace" {
   value       = data.oci_objectstorage_namespace.this.namespace
 }
 
+output "compartment_id" {
+  description = "The OCID of the compartment."
+  value       = var.compartment_ocid
+}
+
 output "kubeconfig_command" {
   description = "Command to generate kubeconfig for this cluster."
   value       = "oci ce cluster create-kubeconfig --cluster-id ${oci_containerengine_cluster.this.id} --file $$HOME/.kube/config --region ${var.region} --token-version 2.0.0"
