@@ -66,6 +66,15 @@ jobs:
       - name: Verify cluster access
         run: kubectl get nodes
 
+      - name: Ensure cnpg-system namespace is clean
+        run: |
+          if kubectl get namespace cnpg-system &>/dev/null 2>&1; then
+            echo "Cleaning up residual state from prior run..."
+            chmod +x scripts/cleanup-cnpg.sh scripts/wait-for-namespace-gone.sh
+            ./scripts/cleanup-cnpg.sh ${{ github.event.inputs.namespace }}
+            ./scripts/wait-for-namespace-gone.sh cnpg-system 120
+          fi
+
       - name: Install Helm
         uses: azure/setup-helm@v5.0.0
 
@@ -84,19 +93,14 @@ jobs:
             --wait \
             --timeout 3m
 
-      - name: Ensure cnpg-system namespace is clean
-        run: |
-          if kubectl get namespace cnpg-system &>/dev/null 2>&1; then
-            echo "Cleaning up residual state from prior run..."
-            chmod +x scripts/cleanup-cnpg.sh scripts/wait-for-namespace-gone.sh
-            ./scripts/cleanup-cnpg.sh ${{ github.event.inputs.namespace }}
-            ./scripts/wait-for-namespace-gone.sh cnpg-system 120
-          fi
-
       - name: Install Barman Cloud Plugin
         run: |
           kubectl create namespace cnpg-system --dry-run=client -o yaml | kubectl apply -f -
           kubectl apply -f https://github.com/cloudnative-pg/plugin-barman-cloud/releases/download/v0.12.0/manifest.yaml
+          kubectl wait --for=condition=Ready --timeout=60s \
+            certificate/barman-cloud-client \
+            certificate/barman-cloud-server \
+            -n cnpg-system
           kubectl rollout status deployment -n cnpg-system barman-cloud --timeout=120s
 
       - name: Install CNPG Operator

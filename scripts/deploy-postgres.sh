@@ -87,6 +87,10 @@ echo ""
 echo "=== Installing Barman Cloud Plugin ==="
 kubectl create namespace cnpg-system --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply -f https://github.com/cloudnative-pg/plugin-barman-cloud/releases/download/v0.12.0/manifest.yaml
+kubectl wait --for=condition=Ready --timeout=60s \
+  certificate/barman-cloud-client \
+  certificate/barman-cloud-server \
+  -n cnpg-system
 kubectl rollout status deployment -n cnpg-system barman-cloud --timeout=120s
 
 # --- Install CNPG Operator ---
