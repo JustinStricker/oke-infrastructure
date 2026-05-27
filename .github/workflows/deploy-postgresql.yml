@@ -115,11 +115,11 @@ jobs:
 
       - name: Install OCI Block Volume CSI Driver
         run: |
-          oci ce cluster addon install --addon-name oci-bv-csi-driver \
+          oci ce cluster install-addon --addon-name oci-bv-csi-driver \
             --cluster-id ${{ steps.tf_output.outputs.cluster_id }} \
             --is-permanently-enabled true \
             --wait-for-work-request 2>/dev/null || \
-          oci ce cluster addon update --addon-name oci-bv-csi-driver \
+          oci ce cluster update-addon --addon-name oci-bv-csi-driver \
             --cluster-id ${{ steps.tf_output.outputs.cluster_id }} \
             --is-permanently-enabled true \
             --wait-for-work-request 2>/dev/null

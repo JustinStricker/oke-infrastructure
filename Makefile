@@ -39,11 +39,11 @@ deploy-postgres:
 	helm upgrade --install cnpg cnpg/cloudnative-pg \
 		--namespace cnpg-system --create-namespace --wait --timeout 5m
 	@echo "Installing OCI Block Volume CSI Driver..."
-	oci ce cluster addon install --addon-name oci-bv-csi-driver \
+	oci ce cluster install-addon --addon-name oci-bv-csi-driver \
 		--cluster-id $$(tofu output -raw cluster_id) \
 		--is-permanently-enabled true \
 		--wait-for-work-request 2>/dev/null || \
-	oci ce cluster addon update --addon-name oci-bv-csi-driver \
+	oci ce cluster update-addon --addon-name oci-bv-csi-driver \
 		--cluster-id $$(tofu output -raw cluster_id) \
 		--is-permanently-enabled true \
 		--wait-for-work-request 2>/dev/null

@@ -5,7 +5,7 @@ resource "oci_containerengine_cluster" "this" {
   kubernetes_version = var.kubernetes_version
   name               = var.cluster_name
   vcn_id             = oci_core_vcn.this.id
-  type               = "BASIC_CLUSTER"
+  type               = "ENHANCED_CLUSTER"
 
   cluster_pod_network_options {
     cni_type = "OCI_VCN_IP_NATIVE"
