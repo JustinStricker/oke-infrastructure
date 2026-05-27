@@ -117,14 +117,6 @@ data "oci_containerengine_node_pool_option" "this" {
   node_pool_os_arch     = "AARCH64"
 }
 
-# --- OKE Add-ons ---
-
-resource "oci_containerengine_addon" "oci_bv_csi_driver" {
-  addon_name                       = "oci-bv-csi-driver"
-  cluster_id                       = oci_containerengine_cluster.this.id
-  remove_addon_resources_on_delete = true
-}
-
 # --- OCI Object Storage namespace (for backup bucket) ---
 
 data "oci_objectstorage_namespace" "this" {

@@ -113,6 +113,14 @@ jobs:
             --wait \
             --timeout 5m
 
+      - name: Install OCI Block Volume CSI Driver
+        run: |
+          CCM_VERSION="v1.35.0"
+          for f in oci-csi-node-rbac.yaml oci-csi-controller-driver.yaml oci-csi-node-driver.yaml; do
+            kubectl apply -f "https://github.com/oracle/oci-cloud-controller-manager/releases/download/${CCM_VERSION}/${f}"
+          done
+          kubectl apply -f https://raw.githubusercontent.com/oracle/oci-cloud-controller-manager/master/manifests/container-storage-interface/storage-class.yaml
+
       - name: Verify StorageClass
         run: kubectl get storageclass oci-bv
 
