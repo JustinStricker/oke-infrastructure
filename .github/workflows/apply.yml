@@ -1,21 +1,21 @@
-name: Apply Infrastructure 
+name: Apply Infrastructure
 
 on:
   workflow_dispatch:
   pull_request:
     branches: [main]
     paths:
-      - '*.tf'
-      - '*.tfvars'
-      - '*.tfvars.example'
-      - 'scripts/bootstrap-state.sh'
+      - 'infrastructure/**'
+      - '.github/workflows/apply.yml'
+      - '.github/workflows/destroy.yml'
+      - '.github/workflows/drift-check.yml'
   push:
     branches: [main]
     paths:
-      - '*.tf'
-      - '*.tfvars'
-      - '*.tfvars.example'
-      - 'scripts/bootstrap-state.sh'
+      - 'infrastructure/**'
+      - '.github/workflows/apply.yml'
+      - '.github/workflows/destroy.yml'
+      - '.github/workflows/drift-check.yml'
 
 env:
   OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
@@ -38,6 +38,9 @@ jobs:
   deploy:
     name: OpenTofu Deploy
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infrastructure
 
     steps:
       - uses: actions/checkout@v6

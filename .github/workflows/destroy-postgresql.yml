@@ -47,6 +47,7 @@ jobs:
           python-version: '3.x'
 
       - name: OpenTofu Init
+        working-directory: infrastructure
         run: |
           pip install oci-cli -q
           OCI_NAMESPACE=$(oci os ns get | jq -r '.data')
@@ -56,6 +57,7 @@ jobs:
 
       - name: Get Cluster OCID from OpenTofu
         id: tf_output
+        working-directory: infrastructure
         run: |
           CLUSTER_ID=$(tofu output -raw cluster_id)
           echo "cluster_id=$CLUSTER_ID" >> $GITHUB_OUTPUT
@@ -72,7 +74,7 @@ jobs:
       - name: Delete PostgreSQL Cluster
         run: |
           echo "Deleting PostgreSQL cluster in namespace ${{ github.event.inputs.namespace }}..."
-          kubectl delete -f k8s/postgres/cluster.yaml \
+          kubectl delete -f infrastructure/k8s/postgres/cluster.yaml \
             -n ${{ github.event.inputs.namespace }} \
             --wait=true
 

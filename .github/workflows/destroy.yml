@@ -29,6 +29,9 @@ jobs:
     name: OpenTofu Destroy
     runs-on: ubuntu-latest
     if: github.event.inputs.confirm == 'destroy'
+    defaults:
+      run:
+        working-directory: infrastructure
 
     steps:
       - uses: actions/checkout@v6

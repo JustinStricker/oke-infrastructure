@@ -22,6 +22,9 @@ env:
 jobs:
   drift-check:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infrastructure
     steps:
       - uses: actions/checkout@v6
 

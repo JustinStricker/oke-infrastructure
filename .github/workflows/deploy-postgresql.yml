@@ -43,6 +43,7 @@ jobs:
           python-version: '3.x'
 
       - name: OpenTofu Init
+        working-directory: infrastructure
         run: |
           pip install oci-cli -q
           OCI_NAMESPACE=$(oci os ns get | jq -r '.data')
@@ -52,6 +53,7 @@ jobs:
 
       - name: Get Cluster OCID
         id: tf_output
+        working-directory: infrastructure
         run: |
           echo "cluster_id=$(tofu output -raw cluster_id)" >> $GITHUB_OUTPUT
           echo "vcn_id=$(tofu output -raw vcn_id)" >> $GITHUB_OUTPUT
@@ -72,9 +74,9 @@ jobs:
         run: |
           if kubectl get namespace cnpg-system &>/dev/null 2>&1; then
             echo "Cleaning up residual state from prior run..."
-            chmod +x scripts/cleanup-cnpg.sh scripts/wait-for-namespace-gone.sh
-            ./scripts/cleanup-cnpg.sh ${{ github.event.inputs.namespace }}
-            ./scripts/wait-for-namespace-gone.sh cnpg-system 120
+            chmod +x infrastructure/scripts/cleanup-cnpg.sh infrastructure/scripts/wait-for-namespace-gone.sh
+            ./infrastructure/scripts/cleanup-cnpg.sh ${{ github.event.inputs.namespace }}
+            ./infrastructure/scripts/wait-for-namespace-gone.sh cnpg-system 120
           fi
 
       - name: Install Helm
@@ -136,7 +138,7 @@ jobs:
       - name: Deploy PostgreSQL Cluster
         run: |
           kubectl create namespace ${{ github.event.inputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
-          kubectl apply -f k8s/postgres/cluster.yaml -n ${{ github.event.inputs.namespace }}
+          kubectl apply -f infrastructure/k8s/postgres/cluster.yaml -n ${{ github.event.inputs.namespace }}
           kubectl wait --for=condition=Ready \
             cluster/postgres-cluster \
             -n ${{ github.event.inputs.namespace }} \
@@ -144,8 +146,8 @@ jobs:
 
       - name: Configure Backups
         run: |
-          chmod +x scripts/setup-backup.sh
-          ./scripts/setup-backup.sh \
+          chmod +x infrastructure/scripts/setup-backup.sh
+          ./infrastructure/scripts/setup-backup.sh \
             ${{ github.event.inputs.namespace }} \
             ${{ secrets.OCI_REGION }}
 
@@ -162,5 +164,5 @@ jobs:
         if: always() && (failure() || cancelled())
         run: |
           echo "=== Cleaning up after failed/cancelled deployment ==="
-          chmod +x scripts/cleanup-cnpg.sh
-          ./scripts/cleanup-cnpg.sh "${{ github.event.inputs.namespace }}"
+          chmod +x infrastructure/scripts/cleanup-cnpg.sh
+          ./infrastructure/scripts/cleanup-cnpg.sh "${{ github.event.inputs.namespace }}"

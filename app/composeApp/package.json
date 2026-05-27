@@ -1,0 +1,9 @@
+{
+  "name": "compose-app",
+  "version": "1.0.0",
+  "description": "Kotlin Compose Multiplatform Web App",
+  "dependencies": {
+    "@sqlite.org/sqlite-wasm": "^1.0.0",
+    "sql.js": "^1.12.0"
+  }
+}

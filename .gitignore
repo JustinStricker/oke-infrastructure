@@ -1,35 +1,24 @@
-OpenTofu / Local state files
+# --- Terraform / OpenTofu ---
 *.tfstate
 *.tfstate.backup
-
-.terraform directory which contains providers and modules
 .terraform/
-
-Crash log files
 crash.log
 crash.*.log
-
-OpenTofu plan files
 *.tfplan
-
-# OpenTofu overrides
 .opentofulock.hcl
-
-Infracost files
 .infracost/
 *.infracost.json
-
-OpenTofu variable definition files
-These often contain sensitive information.
-If you need to version your variables, consider a ".tfvars.example" file.
 *.tfvars
 *.tfvars.json
-
-OCI credentials and private keys
-The GitHub Action workflow creates this file from a secret.
-private_key.pem
 *.pem
 
-IDE / OS generated files
+# --- KMP / Gradle ---
+.gradle/
+build/
+local.properties
+*.iml
+
+# --- IDE / OS ---
 .DS_Store
 .vscode/
+.idea/
