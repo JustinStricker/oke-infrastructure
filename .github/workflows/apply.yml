@@ -35,9 +35,10 @@ env:
   TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
 
 jobs:
-  plan:
-    name: OpenTofu Plan
+  deploy:
+    name: OpenTofu Deploy
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v6
 
@@ -67,39 +68,13 @@ jobs:
       - name: OpenTofu Plan
         run: tofu plan -no-color -out=tfplan
 
-  apply:
-    name: OpenTofu Apply
-    runs-on: ubuntu-latest
-    needs: plan
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: opentofu/setup-opentofu@v2.0.1
-        with:
-          tofu_version: 1.12.0
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - name: OpenTofu Init
-        run: |
-          pip install oci-cli -q
-          OCI_NAMESPACE=$(oci os ns get | jq -r '.data')
-          tofu init \
-            -backend-config="region=${OCI_REGION}" \
-            -backend-config="endpoint=https://${OCI_NAMESPACE}.compat.objectstorage.${OCI_REGION}.oraclecloud.com"
-
-      - name: OpenTofu Plan
-        run: tofu plan -no-color -out=tfplan
-
       - name: Backup state before apply
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         run: tofu state pull > ".terraform.tfstate.$(date +%s).backup"
         continue-on-error: true
 
       - name: Import existing bucket into state
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         run: |
           NAMESPACE=$(oci os ns get | jq -r '.data')
           BUCKET="oke-postgres-backups-oke-infrastructure"
@@ -117,6 +92,7 @@ jobs:
         continue-on-error: true
 
       - name: OpenTofu Apply
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         run: tofu apply -auto-approve tfplan
 
       - name: Cleanup on failure
