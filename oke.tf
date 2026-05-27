@@ -120,8 +120,8 @@ data "oci_containerengine_node_pool_option" "this" {
 # --- OKE Add-ons ---
 
 resource "oci_containerengine_addon" "oci_bv_csi_driver" {
-  addon_name                     = "oci-bv-csi-driver"
-  cluster_id                     = oci_containerengine_cluster.this.id
+  addon_name                       = "oci-bv-csi-driver"
+  cluster_id                       = oci_containerengine_cluster.this.id
   remove_addon_resources_on_delete = true
 }
 
