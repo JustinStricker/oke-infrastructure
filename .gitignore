@@ -18,6 +18,9 @@ build/
 local.properties
 *.iml
 
+# --- Data ---
+data/
+
 # --- KMP / Kotlin ---
 .kotlin/
 kotlin-js-store/
