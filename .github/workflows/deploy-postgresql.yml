@@ -113,19 +113,6 @@ jobs:
             --wait \
             --timeout 5m
 
-      - name: Install OCI Block Volume CSI Driver
-        run: |
-          oci ce cluster addon install --addon-name oci-bv-csi-driver \
-            --cluster-id ${{ steps.tf_output.outputs.cluster_id }} \
-            --is-permanently-enabled true \
-            --region ${{ secrets.OCI_REGION }} \
-            --wait-for-work-request || \
-          oci ce cluster addon update --addon-name oci-bv-csi-driver \
-            --cluster-id ${{ steps.tf_output.outputs.cluster_id }} \
-            --is-permanently-enabled true \
-            --region ${{ secrets.OCI_REGION }} \
-            --wait-for-work-request
-
       - name: Verify StorageClass
         run: kubectl get storageclass oci-bv
 
