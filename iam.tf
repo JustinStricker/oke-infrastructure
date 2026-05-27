@@ -7,13 +7,16 @@ resource "oci_identity_dynamic_group" "oke_nodes" {
   matching_rule  = "ALL {instance.compartment.id = '${var.compartment_ocid}'}"
 }
 
-# --- Policy for OCIR Access ---
+# --- Policy for OCIR Access and CSI Driver ---
 
-resource "oci_identity_policy" "oke_nodes_ocir" {
+resource "oci_identity_policy" "oke_nodes" {
   compartment_id = var.tenancy_ocid
-  name           = "oke_nodes_ocir_policy_tf"
-  description    = "Policy to allow OKE worker nodes to pull images from OCIR, managed by OpenTofu."
+  name           = "oke_nodes_policy_tf"
+  description    = "Policy for OKE worker nodes: OCIR pull, CSI volume management, and network access."
   statements = [
-    "Allow dynamic-group ${oci_identity_dynamic_group.oke_nodes.name} to read repos in compartment id ${var.compartment_ocid}"
+    "Allow dynamic-group ${oci_identity_dynamic_group.oke_nodes.name} to read repos in compartment id ${var.compartment_ocid}",
+    "Allow dynamic-group ${oci_identity_dynamic_group.oke_nodes.name} to manage volume-family in compartment id ${var.compartment_ocid}",
+    "Allow dynamic-group ${oci_identity_dynamic_group.oke_nodes.name} to use virtual-network-family in compartment id ${var.compartment_ocid}",
+    "Allow dynamic-group ${oci_identity_dynamic_group.oke_nodes.name} to read instance-family in compartment id ${var.compartment_ocid}"
   ]
 }
