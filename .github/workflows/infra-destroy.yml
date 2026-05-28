@@ -1,13 +1,11 @@
-name: Setup PostgreSQL Backups
+name: '[Infra] Destroy'
 
 on:
   workflow_dispatch:
     inputs:
-      namespace:
-        description: 'Kubernetes namespace for PostgreSQL'
+      confirm:
+        description: 'Type "destroy" to confirm'
         required: true
-        default: 'postgres'
-        type: string
 
 env:
   OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
@@ -27,9 +25,13 @@ env:
   TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
 
 jobs:
-  setup-backups:
-    name: Create/Update ObjectStore and Credentials
+  destroy:
+    name: OpenTofu Destroy
     runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'destroy'
+    defaults:
+      run:
+        working-directory: infrastructure
 
     steps:
       - uses: actions/checkout@v6
@@ -43,7 +45,6 @@ jobs:
           python-version: '3.x'
 
       - name: OpenTofu Init
-        working-directory: infrastructure
         run: |
           pip install oci-cli -q
           OCI_NAMESPACE=$(oci os ns get | jq -r '.data')
@@ -51,25 +52,20 @@ jobs:
             -backend-config="region=${OCI_REGION}" \
             -backend-config="endpoint=https://${OCI_NAMESPACE}.compat.objectstorage.${OCI_REGION}.oraclecloud.com"
 
-      - name: Get Cluster OCID
-        id: tf_output
-        working-directory: infrastructure
+      - name: Clean up Kubernetes resources before infrastructure destroy
         run: |
-          echo "cluster_id=$(tofu output -raw cluster_id)" >> $GITHUB_OUTPUT
-
-      - name: Configure kubeconfig
-        run: |
-          mkdir -p $HOME/.kube
+          CLUSTER_ID=$(tofu output -raw cluster_id)
           oci ce cluster create-kubeconfig \
-            --cluster-id ${{ steps.tf_output.outputs.cluster_id }} \
+            --cluster-id "$CLUSTER_ID" \
             --file $HOME/.kube/config \
             --region ${{ secrets.OCI_REGION }} \
             --token-version 2.0.0
+          kubectl delete pvc --all --all-namespaces --wait=true --timeout=60s 2>/dev/null || true
+          kubectl delete pv --all --wait=true --timeout=60s 2>/dev/null || true
+          kubectl delete svc --all-namespaces --all --wait=true --timeout=60s 2>/dev/null || true
 
-      - name: Create/Update Backup ObjectStore
-        working-directory: infrastructure
-        run: |
-          chmod +x scripts/setup-backup.sh
-          ./scripts/setup-backup.sh \
-            ${{ github.event.inputs.namespace }} \
-            ${{ secrets.OCI_REGION }}
+      - name: OpenTofu Plan Destroy
+        run: tofu plan -destroy -no-color -out=tfplan -exclude="oci_objectstorage_bucket.postgres_backups"
+
+      - name: OpenTofu Destroy
+        run: tofu apply -auto-approve tfplan

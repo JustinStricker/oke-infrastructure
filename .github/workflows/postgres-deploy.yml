@@ -1,4 +1,4 @@
-name: Deploy PostgreSQL
+name: '[Postgres] Deploy'
 
 on:
   workflow_dispatch:

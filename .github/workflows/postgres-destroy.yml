@@ -1,4 +1,4 @@
-name: Destroy PostgreSQL
+name: '[Postgres] Destroy'
 
 on:
   workflow_dispatch:

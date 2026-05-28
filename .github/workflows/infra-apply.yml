@@ -1,4 +1,5 @@
-name: Drift Check
+name: '[Infra] Apply'
+
 on:
   workflow_dispatch:
 
@@ -20,11 +21,13 @@ env:
   TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
 
 jobs:
-  drift-check:
+  deploy:
+    name: OpenTofu Deploy
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: infrastructure
+
     steps:
       - uses: actions/checkout@v6
 
@@ -44,20 +47,39 @@ jobs:
             -backend-config="region=${OCI_REGION}" \
             -backend-config="endpoint=https://${OCI_NAMESPACE}.compat.objectstorage.${OCI_REGION}.oraclecloud.com"
 
-      - name: State Inventory
-        run: |
-          echo "=== Resources in state ==="
-          tofu state list
-          echo ""
-          echo "=== Outputs ==="
-          tofu output
+      - name: OpenTofu Format
+        run: tofu fmt -check -diff -no-color
+        continue-on-error: false
 
-      - name: Drift Detection (Plan)
+      - name: OpenTofu Validate
+        run: tofu validate -no-color
+
+      - name: OpenTofu Plan
+        run: tofu plan -no-color -out=tfplan
+
+      - name: Backup state before apply
+        if: github.event_name == 'workflow_dispatch'
+        run: tofu state pull > ".terraform.tfstate.$(date +%s).backup"
         continue-on-error: true
-        run: tofu plan -no-color | tee plan.txt
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: drift-report
-          path: plan.txt
+      - name: Import existing bucket into state
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          NAMESPACE=$(oci os ns get | jq -r '.data')
+          BUCKET="oke-postgres-backups-oke-infrastructure"
+          IMPORT_ID="n/${NAMESPACE}/b/${BUCKET}"
+          if oci os bucket get --namespace "${NAMESPACE}" --bucket-name "${BUCKET}" &>/dev/null; then
+            if ! tofu state list 2>/dev/null | grep -q "oci_objectstorage_bucket.postgres_backups"; then
+              echo "Bucket exists in OCI but not in state. Importing..."
+              tofu import oci_objectstorage_bucket.postgres_backups "${IMPORT_ID}"
+            else
+              echo "Bucket already in state; skipping import."
+            fi
+          else
+            echo "Bucket does not exist in OCI; skipping import."
+          fi
+        continue-on-error: true
+
+      - name: OpenTofu Apply
+        if: github.event_name == 'workflow_dispatch'
+        run: tofu apply -auto-approve tfplan

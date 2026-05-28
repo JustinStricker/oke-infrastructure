@@ -1,4 +1,4 @@
-name: CI
+name: '[App] Build, Test & Deploy'
 
 on:
   push:

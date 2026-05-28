@@ -1,4 +1,4 @@
-name: Bootstrap Remote State
+name: '[Infra] Bootstrap State'
 
 on:
   workflow_dispatch:
