@@ -27,6 +27,14 @@ jobs:
       - name: Build web client (Wasm/JS)
         run: ./gradlew :app:composeApp:wasmJsBrowserDistribution --no-daemon
 
+      - name: Create Cloudflare Pages project (if not exists)
+        run: |
+          npx wrangler pages project create notable-web \
+            --production-branch main || echo "Project already exists, continuing..."
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:

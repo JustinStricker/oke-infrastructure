@@ -84,7 +84,7 @@ npx wrangler pages deploy \
   --project-name=notable-web
 ```
 
-The first run creates the project in Cloudflare Pages. Subsequent runs deploy a new version (immutable, with instant rollback in the dashboard).
+The project is created explicitly in the CI workflow via `wrangler pages project create` before the deploy step (no-op if already exists). Subsequent runs deploy a new version (immutable, with instant rollback in the dashboard).
 
 ### CORS
 
