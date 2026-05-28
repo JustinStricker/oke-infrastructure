@@ -47,7 +47,7 @@ Trigger: push to `main`. Two jobs in one file:
 3. Derive OCIR registry + namespace at runtime → `docker login`
 4. `docker/build-push-action` with `linux/arm64` → OCIR (tagged with `${{ github.sha }}` + `latest`)
 5. Generate kubeconfig via `oci ce cluster create-kubeconfig`
-6. `kubectl apply -f infrastructure/k8s/app/`
+6. `sed` replaces the placeholder image in `deployment.yaml` with the real OCIR URL, then pipes to `kubectl apply`; `service.yaml` applied separately
 7. Wait for rollout + show LoadBalancer IP
 
 The cluster OCID is fetched via OCI CLI directly (no OpenTofu dependency) and kubeconfig is generated dynamically — **no static `KUBECONFIG_RAW` secret needed**:
