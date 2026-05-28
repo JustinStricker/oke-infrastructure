@@ -53,7 +53,7 @@ The web client is built by Kotlin/Wasm and produces static files — no server-s
 ### Build
 
 ```bash
-./gradlew :app:composeApp:wasmJsDistribution
+./gradlew :app:composeApp:wasmJsBrowserDistribution
 ```
 
 Output directory:
@@ -141,7 +141,7 @@ deploy:
         distribution: 'temurin'
         java-version: '21'
     - uses: gradle/actions/setup-gradle@v4
-    - run: ./gradlew :app:composeApp:wasmJsDistribution --no-daemon
+    - run: ./gradlew :app:composeApp:wasmJsBrowserDistribution --no-daemon
     - uses: cloudflare/wrangler-action@v3
       with:
         apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
