@@ -53,7 +53,7 @@ jobs:
             -d '{"name": "notable.hineat.com"}' 2>&1) || true
           if echo "$OUTPUT" | grep -qi "already exists"; then
             echo "Custom domain already exists, continuing..."
-          elif echo "$OUTPUT" | grep -qi "error"; then
+          elif echo "$OUTPUT" | grep -qi '"success": false'; then
             echo "FAILED: $OUTPUT"
             exit 1
           else
@@ -62,3 +62,24 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Create DNS CNAME for custom domain
+        run: |
+          ZONE_ID=$(curl -s "https://api.cloudflare.com/client/v4/zones?name=hineat.com" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            | jq -r '.result[0].id')
+          OUTPUT=$(curl -s -X POST \
+            "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -d '{"type":"CNAME","name":"notable","content":"notable-web.pages.dev","proxied":true}' 2>&1) || true
+          if echo "$OUTPUT" | grep -qi "already exists"; then
+            echo "DNS record already exists, continuing..."
+          elif echo "$OUTPUT" | grep -qi '"success": false'; then
+            echo "FAILED: $OUTPUT"
+            exit 1
+          else
+            echo "$OUTPUT"
+          fi
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
