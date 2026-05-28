@@ -8,6 +8,7 @@ on:
       - 'app/shared/**'
       - 'gradle/**'
       - '.github/workflows/web-deploy.yml'
+  workflow_dispatch:
 
 jobs:
   deploy:
