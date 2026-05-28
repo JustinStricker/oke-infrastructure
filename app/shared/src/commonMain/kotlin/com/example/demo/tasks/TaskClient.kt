@@ -8,7 +8,7 @@ import io.ktor.client.request.*
 import io.ktor.http.*
 
 class TaskClient(httpClient: io.ktor.client.HttpClient, serverUrl: String = com.example.demo.core.getServerUrl()) : BaseClient(httpClient, serverUrl) {
-    private val tasksUrl = "$serverUrl/tasks"
+    private val tasksUrl: String get() = "$serverUrl/tasks"
 
     // INTENT: Fetch all global tasks.
     suspend fun getTasks(): List<Task> {

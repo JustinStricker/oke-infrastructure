@@ -85,6 +85,9 @@ class SyncViewModel(
         _isConnected.value = cleanUrl.isNotBlank()
         // Clear previous errors
         _loginError.value = null
+        // Update existing clients so CRUD operations use the new URL
+        notesRepo.updateServerUrl(cleanUrl)
+        tasksRepo.updateServerUrl(cleanUrl)
     }
 
     /**

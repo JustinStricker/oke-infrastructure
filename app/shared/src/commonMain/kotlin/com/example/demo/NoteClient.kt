@@ -23,8 +23,8 @@ import kotlinx.serialization.json.Json
 // INTENT: Centralized API client for all network communication between the KMP frontend and Ktor backend.
 // CONSTRAINT: Must be used as the sole gateway for network requests to ensure consistent authentication and serialization.
 class NoteClient(httpClient: HttpClient, serverUrl: String = getServerUrl()) : BaseClient(httpClient, serverUrl) {
-    private val notesUrl = "$serverUrl/notes"
-    private val loginUrl = "$serverUrl/login"
+    private val notesUrl: String get() = "$serverUrl/notes"
+    private val loginUrl: String get() = "$serverUrl/login"
 
     // INTENT: Authenticate user and persist the session token.
     // CONSTRAINT: This is the only endpoint that does not require the auth() header.

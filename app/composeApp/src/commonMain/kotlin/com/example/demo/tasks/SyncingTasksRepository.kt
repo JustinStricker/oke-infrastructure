@@ -100,6 +100,10 @@ class SyncingTasksRepository(
         taskClient.clearToken()
     }
 
+    fun updateServerUrl(url: String) {
+        taskClient.updateServerUrl(url)
+    }
+
     /**
      * Run a one-way server -> local sync for PRIVATE/PUBLIC tasks.
      * Server is always authoritative. Local cache is overwritten.

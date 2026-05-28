@@ -15,4 +15,10 @@ private fun resolveServerUrl(): String = js(
     })()"""
 )
 
-actual fun getServerUrl(): String = resolveServerUrl()
+actual fun getServerUrl(): String {
+    // First check persisted user setting (from Settings screen)
+    val savedUrl = AppSettings.baseUrl
+    if (savedUrl.isNotBlank()) return savedUrl
+    // Fall back to global SERVER_URL override or localhost
+    return resolveServerUrl()
+}

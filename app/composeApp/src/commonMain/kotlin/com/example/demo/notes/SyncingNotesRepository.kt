@@ -143,6 +143,10 @@ class SyncingNotesRepository(
         noteClient.clearToken()
     }
 
+    fun updateServerUrl(url: String) {
+        noteClient.updateServerUrl(url)
+    }
+
     /**
      * Run a one-way server -> local sync for PRIVATE/PUBLIC notes.
      * Server is always authoritative. Local cache is overwritten.

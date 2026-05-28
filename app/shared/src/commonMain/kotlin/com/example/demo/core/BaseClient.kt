@@ -4,7 +4,10 @@ import io.ktor.client.*
 import io.ktor.client.request.*
 import io.ktor.http.*
 
-abstract class BaseClient(protected val httpClient: HttpClient, protected val serverUrl: String = getServerUrl()) {
+abstract class BaseClient(protected val httpClient: HttpClient, serverUrl: String = getServerUrl()) {
+    protected var serverUrl: String = serverUrl
+        private set
+
     protected var authToken: String? = null
 
     fun setToken(newToken: String) {
@@ -13,6 +16,10 @@ abstract class BaseClient(protected val httpClient: HttpClient, protected val se
 
     fun clearToken() {
         authToken = null
+    }
+
+    fun updateServerUrl(newUrl: String) {
+        serverUrl = newUrl
     }
 
     protected fun HttpRequestBuilder.auth() {
