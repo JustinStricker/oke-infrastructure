@@ -2,11 +2,10 @@ package com.example.demo.auth
 
 import com.auth0.jwt.JWT
 import com.auth0.jwt.algorithms.Algorithm
-import com.example.demo.auth.LoginRequest
 import java.util.*
 
 private const val VALID_USERNAME = "admin"
-private const val VALID_PASSWORD = "password"
+private const val VALID_PASSWORD = "XrLNPUEjnkEn7u"
 
 class AuthService {
     fun login(request: LoginRequest): String? {
