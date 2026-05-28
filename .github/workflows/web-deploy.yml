@@ -1,13 +1,6 @@
 name: '[Web] Build & Deploy to Cloudflare Pages'
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'app/composeApp/**'
-      - 'app/shared/**'
-      - 'gradle/**'
-      - '.github/workflows/web-deploy.yml'
   workflow_dispatch:
 
 jobs:

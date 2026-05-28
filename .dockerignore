@@ -1,9 +1,14 @@
 .git/
-.gradle/
-build/
+.gitkeep
+**/.gradle/
 *.md
 .idea/
 local.properties
+.DS_Store
 .terraform/
 infrastructure/.terraform/
 data/
+app/composeApp/build/
+app/shared/build/
+kotlin-js-store/
+node_modules/

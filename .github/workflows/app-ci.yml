@@ -1,8 +1,7 @@
 name: '[App] Build, Test & Deploy'
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 env:
   OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
@@ -94,8 +93,6 @@ jobs:
           ${{ env.REGISTRY }}/${{ env.REPO }}:${{ github.sha }}
           ${{ env.REGISTRY }}/${{ env.REPO }}:latest
         platforms: linux/arm64
-        cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.REPO }}:buildcache
-        cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.REPO }}:buildcache,mode=max
 
     - name: Configure kubeconfig
       run: |
