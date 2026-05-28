@@ -52,10 +52,10 @@ deploy-postgres:
 	kubectl apply -f https://github.com/oracle/oci-cloud-controller-manager/releases/download/v1.34.0/oci-csi-node-driver.yaml
 	kubectl apply -f https://raw.githubusercontent.com/oracle/oci-cloud-controller-manager/master/manifests/container-storage-interface/storage-class.yaml
 	kubectl get storageclass oci-bv
+	./scripts/setup-backup.sh $(NAMESPACE)
 	kubectl apply -f k8s/postgres/cluster.yaml -n $(NAMESPACE)
 	kubectl wait --for=condition=Ready pod -l postgresql=postgres-cluster \
 		-n $(NAMESPACE) --timeout=300s
-	./scripts/setup-backup.sh $(NAMESPACE)
 
 destroy-postgres:
 	scripts/cleanup-cnpg.sh $(NAMESPACE) 2>/dev/null || true

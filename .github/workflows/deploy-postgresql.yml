@@ -145,6 +145,13 @@ jobs:
             --wait \
             --timeout 5m
 
+      - name: Configure Backups
+        run: |
+          chmod +x infrastructure/scripts/setup-backup.sh
+          ./infrastructure/scripts/setup-backup.sh \
+            ${{ github.event.inputs.namespace }} \
+            ${{ secrets.OCI_REGION }}
+
       - name: Deploy PostgreSQL Cluster
         run: |
           kubectl create namespace ${{ github.event.inputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
@@ -153,13 +160,6 @@ jobs:
             cluster/postgres-cluster \
             -n ${{ github.event.inputs.namespace }} \
             --timeout=300s
-
-      - name: Configure Backups
-        run: |
-          chmod +x infrastructure/scripts/setup-backup.sh
-          ./infrastructure/scripts/setup-backup.sh \
-            ${{ github.event.inputs.namespace }} \
-            ${{ secrets.OCI_REGION }}
 
       - name: Show PostgreSQL status
         if: success()

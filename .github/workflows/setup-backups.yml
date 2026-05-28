@@ -1,0 +1,75 @@
+name: Setup PostgreSQL Backups
+
+on:
+  workflow_dispatch:
+    inputs:
+      namespace:
+        description: 'Kubernetes namespace for PostgreSQL'
+        required: true
+        default: 'postgres'
+        type: string
+
+env:
+  OCI_COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+  OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+  OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+  OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+  OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+  OCI_REGION: ${{ secrets.OCI_REGION }}
+  OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
+  OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
+  OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+  OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}
+  OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
+  TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+
+jobs:
+  setup-backups:
+    name: Create/Update ObjectStore and Credentials
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: opentofu/setup-opentofu@v2.0.1
+        with:
+          tofu_version: 1.12.0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: OpenTofu Init
+        working-directory: infrastructure
+        run: |
+          pip install oci-cli -q
+          OCI_NAMESPACE=$(oci os ns get | jq -r '.data')
+          tofu init \
+            -backend-config="region=${OCI_REGION}" \
+            -backend-config="endpoint=https://${OCI_NAMESPACE}.compat.objectstorage.${OCI_REGION}.oraclecloud.com"
+
+      - name: Get Cluster OCID
+        id: tf_output
+        working-directory: infrastructure
+        run: |
+          echo "cluster_id=$(tofu output -raw cluster_id)" >> $GITHUB_OUTPUT
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          oci ce cluster create-kubeconfig \
+            --cluster-id ${{ steps.tf_output.outputs.cluster_id }} \
+            --file $HOME/.kube/config \
+            --region ${{ secrets.OCI_REGION }} \
+            --token-version 2.0.0
+
+      - name: Create/Update Backup ObjectStore
+        working-directory: infrastructure
+        run: |
+          chmod +x scripts/setup-backup.sh
+          ./scripts/setup-backup.sh \
+            ${{ github.event.inputs.namespace }} \
+            ${{ secrets.OCI_REGION }}

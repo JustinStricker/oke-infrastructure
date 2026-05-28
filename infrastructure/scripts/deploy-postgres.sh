@@ -107,6 +107,17 @@ helm upgrade --install cnpg cnpg/cloudnative-pg \
 echo "Verifying CNPG operator..."
 kubectl get pods -n cnpg-system
 
+# --- Configure Backups First (ObjectStore must exist before Cluster) ---
+echo ""
+echo "=== Configuring Backups ==="
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "${SCRIPT_DIR}/setup-backup.sh" ]; then
+  "${SCRIPT_DIR}/setup-backup.sh" "${NAMESPACE}" "${REGION}"
+else
+  echo "WARNING: setup-backup.sh not found — backups not configured."
+  echo "Run manually: ./scripts/setup-backup.sh ${NAMESPACE} ${REGION}"
+fi
+
 # --- Deploy PostgreSQL Cluster ---
 echo ""
 echo "=== Deploying PostgreSQL Cluster ==="
@@ -118,17 +129,6 @@ kubectl wait --for=condition=Ready \
     cluster/postgres-cluster \
     -n "${NAMESPACE}" \
     --timeout=300s
-
-# --- Configure Backups ---
-echo ""
-echo "=== Configuring Backups ==="
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-if [ -f "${SCRIPT_DIR}/setup-backup.sh" ]; then
-  "${SCRIPT_DIR}/setup-backup.sh" "${NAMESPACE}" "${REGION}"
-else
-  echo "WARNING: setup-backup.sh not found — backups not configured."
-  echo "Run manually: ./scripts/setup-backup.sh ${NAMESPACE} ${REGION}"
-fi
 
 # --- Success ---
 echo ""
