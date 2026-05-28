@@ -84,13 +84,3 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         run: tofu apply -auto-approve tfplan
 
-      - name: Cleanup on failure
-        if: always() && (failure() || cancelled())
-        run: |
-          echo "=== Cleaning up after failed/cancelled apply ==="
-          tofu init -reconfigure \
-            -backend-config="region=${OCI_REGION}" \
-            -backend-config="endpoint=https://$(oci os ns get | jq -r '.data').compat.objectstorage.${OCI_REGION}.oraclecloud.com"
-          tofu plan -destroy -no-color -out=destroy-tfplan \
-            -exclude="oci_objectstorage_bucket.postgres_backups"
-          tofu apply -auto-approve destroy-tfplan
