@@ -107,7 +107,10 @@ helm upgrade --install cnpg cnpg/cloudnative-pg \
 echo "Verifying CNPG operator..."
 kubectl get pods -n cnpg-system
 
-# --- Configure Backups First (ObjectStore must exist before Cluster) ---
+# --- Ensure namespace exists ---
+kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
+
+# --- Configure Backups (ObjectStore must exist before Cluster) ---
 echo ""
 echo "=== Configuring Backups ==="
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -121,7 +124,6 @@ fi
 # --- Deploy PostgreSQL Cluster ---
 echo ""
 echo "=== Deploying PostgreSQL Cluster ==="
-kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply -f "${MANIFEST}" -n "${NAMESPACE}"
 
 echo "Waiting for PostgreSQL cluster to be ready..."

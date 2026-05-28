@@ -52,6 +52,9 @@ ENDPOINT="${OS_NAMESPACE}.compat.objectstorage.${REGION}.oraclecloud.com"
 echo "Endpoint: https://${ENDPOINT}"
 echo ""
 
+# Ensure the namespace exists (idempotent)
+kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
+
 # Create or update the S3 credentials secret
 echo "Creating/updating Kubernetes secret '${SECRET_NAME}'..."
 kubectl create secret generic "${SECRET_NAME}" \
