@@ -123,3 +123,35 @@ jobs:
         echo "Waiting for LoadBalancer IP..."
         kubectl wait --for=condition=ready svc/demo-server --timeout=120s 2>/dev/null || true
         kubectl get svc demo-server
+
+    - name: Update Cloudflare DNS
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      run: |
+        LB_IP=$(kubectl get svc demo-server -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        echo "LoadBalancer IP: $LB_IP"
+
+        ZONE_NAME="hineat.com"
+        ZONE_ID=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones?name=$ZONE_NAME" \
+          -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" | jq -r '.result[0].id')
+        echo "Zone ID: $ZONE_ID"
+
+        DNS_NAME="api.hineat.com"
+        EXISTING=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records?type=A&name=$DNS_NAME" \
+          -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
+
+        RECORD_ID=$(echo "$EXISTING" | jq -r '.result[0].id // empty')
+
+        if [ -n "$RECORD_ID" ]; then
+          curl -s -X PATCH "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records/$RECORD_ID" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data "{\"type\":\"A\",\"name\":\"$DNS_NAME\",\"content\":\"$LB_IP\",\"ttl\":120,\"proxied\":true}"
+          echo "DNS record updated"
+        else
+          curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data "{\"type\":\"A\",\"name\":\"$DNS_NAME\",\"content\":\"$LB_IP\",\"ttl\":120,\"proxied\":true}"
+          echo "DNS record created"
+        fi
