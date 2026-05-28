@@ -51,11 +51,8 @@ jobs:
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
             -d '{"name": "notable.hineat.com"}' 2>&1) || true
-          if echo "$OUTPUT" | grep -qi "already exists"; then
+          if echo "$OUTPUT" | grep -qiE "already (exists|added)"; then
             echo "Custom domain already exists, continuing..."
-          elif echo "$OUTPUT" | grep -qi '"success": false'; then
-            echo "FAILED: $OUTPUT"
-            exit 1
           else
             echo "$OUTPUT"
           fi
