@@ -7,7 +7,11 @@ package com.example.demo.core
 @OptIn(ExperimentalWasmJsInterop::class)
 private fun resolveServerUrl(): String = js(
     """(function() {
-        if (typeof globalThis.SERVER_URL !== 'undefined') return globalThis.SERVER_URL;
+        if (typeof globalThis.SERVER_URL !== 'undefined') {
+            var url = globalThis.SERVER_URL;
+            if (url.indexOf('://') === -1) return 'https://' + url;
+            return url;
+        }
         var loc = globalThis.location;
         if (!loc) return "http://localhost:8080";
         // Use the page's protocol/hostname but force port 8080 for the Ktor backend

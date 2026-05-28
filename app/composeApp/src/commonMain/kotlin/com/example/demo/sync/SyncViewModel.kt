@@ -79,7 +79,10 @@ class SyncViewModel(
      * Set the server URL and persist it to AppSettings.
      */
     fun setServerUrl(url: String) {
-        val cleanUrl = url.trimEnd('/')
+        var cleanUrl = url.trimEnd('/')
+        if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
+            cleanUrl = "https://$cleanUrl"
+        }
         _serverUrl.value = cleanUrl
         AppSettings.baseUrl = cleanUrl
         _isConnected.value = cleanUrl.isNotBlank()
