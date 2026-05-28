@@ -57,6 +57,7 @@ jobs:
         OCID=$(oci ce cluster list \
           --compartment-id "${{ secrets.OCI_COMPARTMENT_OCID }}" \
           --name "oke-infrastructure" \
+          --lifecycle-state ACTIVE \
           | jq -r '.data[0].id')
         echo "cluster_id=$OCID" >> $GITHUB_OUTPUT
 
