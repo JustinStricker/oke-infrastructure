@@ -50,10 +50,16 @@ Trigger: push to `main`. Two jobs in one file:
 6. `kubectl apply -f infrastructure/k8s/app/`
 7. Wait for rollout + show LoadBalancer IP
 
-The kubeconfig is generated dynamically — **no static `KUBECONFIG_RAW` secret needed**:
+The cluster OCID is fetched via OCI CLI directly (no OpenTofu dependency) and kubeconfig is generated dynamically — **no static `KUBECONFIG_RAW` secret needed**:
 ```yaml
 - name: Get Cluster OCID
-  run: echo "cluster_id=$(tofu output -raw cluster_id)" >> $GITHUB_OUTPUT
+  id: tf_output
+  run: |
+    OCID=$(oci ce cluster list \
+      --compartment-id "${{ secrets.OCI_COMPARTMENT_OCID }}" \
+      --name "oke-infrastructure" \
+      | jq -r '.data[0].id')
+    echo "cluster_id=$OCID" >> $GITHUB_OUTPUT
 
 - name: Configure kubeconfig
   run: |

@@ -51,22 +51,14 @@ jobs:
     - name: Install OCI CLI
       run: pip install oci-cli -q
 
-    - uses: opentofu/setup-opentofu@v2.0.1
-      with:
-        tofu_version: 1.12.0
-
-    - name: OpenTofu Init
-      working-directory: infrastructure
-      run: |
-        NAMESPACE=$(oci os ns get | jq -r '.data')
-        tofu init \
-          -backend-config="region=${OCI_CLI_REGION}" \
-          -backend-config="endpoint=https://${NAMESPACE}.compat.objectstorage.${OCI_CLI_REGION}.oraclecloud.com"
-
     - name: Get Cluster OCID
       id: tf_output
-      working-directory: infrastructure
-      run: echo "cluster_id=$(tofu output -raw cluster_id)" >> $GITHUB_OUTPUT
+      run: |
+        OCID=$(oci ce cluster list \
+          --compartment-id "${{ secrets.OCI_COMPARTMENT_OCID }}" \
+          --name "oke-infrastructure" \
+          | jq -r '.data[0].id')
+        echo "cluster_id=$OCID" >> $GITHUB_OUTPUT
 
     - name: Build server distribution
       run: ./gradlew :app:server:installDist --no-daemon
