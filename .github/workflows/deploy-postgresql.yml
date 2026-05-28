@@ -25,6 +25,8 @@ env:
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
   TF_VAR_compartment_ocid: ${{ secrets.OCI_COMPARTMENT_OCID }}
   TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+  CSI_RELEASE: v1.34.0
+  SNAPSHOT_VERSION: v8.3.0
 
 jobs:
   deploy:
@@ -85,9 +87,19 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v5.0.0
 
+      - name: Install VolumeSnapshot CRDs
+        run: |
+          for f in volumesnapshotclasses volumesnapshotcontents volumesnapshots; do
+            kubectl apply -f "https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/${SNAPSHOT_VERSION}/client/config/crd/snapshot.storage.k8s.io_${f}.yaml"
+          done
+          kubectl wait --for=condition=Established \
+            crd/volumesnapshotclasses.snapshot.storage.k8s.io \
+            crd/volumesnapshotcontents.snapshot.storage.k8s.io \
+            crd/volumesnapshots.snapshot.storage.k8s.io \
+            --timeout=30s
+
       - name: Install OCI Block Volume CSI Driver
         run: |
-          CSI_RELEASE="v1.34.0"
           printf 'auth:\n  useInstancePrincipals: true\ncompartment: %s\nvcn: %s\n' \
             "${{ secrets.OCI_COMPARTMENT_OCID }}" \
             "${{ steps.tf_output.outputs.vcn_id }}" > /tmp/oci-config.yaml
@@ -96,11 +108,12 @@ jobs:
             --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null || true
           rm -f /tmp/oci-config.yaml
           kubectl apply -f https://github.com/oracle/oci-cloud-controller-manager/releases/download/${CSI_RELEASE}/oci-csi-node-rbac.yaml
-          kubectl apply -f https://github.com/oracle/oci-cloud-controller-manager/releases/download/${CSI_RELEASE}/oci-csi-controller-driver.yaml
-          # OKE has no control-plane nodes; remove the nodeSelector so the
-          # controller schedules on worker nodes.
-          kubectl patch deployment csi-oci-controller -n kube-system --type json \
-            -p='[{"op": "remove", "path": "/spec/template/spec/nodeSelector"}]'
+          # OKE has no control-plane nodes; remove the nodeSelector before applying
+          # so the controller schedules on worker nodes.
+          curl -sL https://github.com/oracle/oci-cloud-controller-manager/releases/download/${CSI_RELEASE}/oci-csi-controller-driver.yaml \
+            | kubectl patch --type json -f - --local -o yaml \
+              -p='[{"op": "remove", "path": "/spec/template/spec/nodeSelector"}]' \
+            | kubectl apply -f -
           kubectl apply -f https://github.com/oracle/oci-cloud-controller-manager/releases/download/${CSI_RELEASE}/oci-csi-node-driver.yaml
           kubectl apply -f https://raw.githubusercontent.com/oracle/oci-cloud-controller-manager/master/manifests/container-storage-interface/storage-class.yaml
 

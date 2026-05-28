@@ -1,6 +1,8 @@
 MAKEFILE_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
 TOFU := tofu -chdir=$(MAKEFILE_DIR)
 NAMESPACE ?= postgres
+CSI_RELEASE := v1.34.0
+SNAPSHOT_VERSION := v8.3.0
 
 .PHONY: init plan apply destroy fmt validate output console
 .PHONY: deploy-postgres destroy-postgres reset-postgres install-barman-plugin install-operator
@@ -47,11 +49,25 @@ deploy-postgres:
 		--from-file=config.yaml=/tmp/oci-config.yaml \
 		--dry-run=client -o yaml | kubectl apply -f - 2>/dev/null || true
 	rm -f /tmp/oci-config.yaml
-	kubectl apply -f https://github.com/oracle/oci-cloud-controller-manager/releases/download/v1.34.0/oci-csi-node-rbac.yaml
-	kubectl apply -f https://github.com/oracle/oci-cloud-controller-manager/releases/download/v1.34.0/oci-csi-controller-driver.yaml
-	kubectl apply -f https://github.com/oracle/oci-cloud-controller-manager/releases/download/v1.34.0/oci-csi-node-driver.yaml
+	@echo "Installing VolumeSnapshot CRDs..."
+	for f in volumesnapshotclasses volumesnapshotcontents volumesnapshots; do \
+		kubectl apply -f "https://raw.githubusercontent.com/kubernetes-csi/external-snapshotter/$(SNAPSHOT_VERSION)/client/config/crd/snapshot.storage.k8s.io_$${f}.yaml"; \
+	done; \
+	kubectl wait --for=condition=Established \
+		crd/volumesnapshotclasses.snapshot.storage.k8s.io \
+		crd/volumesnapshotcontents.snapshot.storage.k8s.io \
+		crd/volumesnapshots.snapshot.storage.k8s.io \
+		--timeout=30s
+	kubectl apply -f https://github.com/oracle/oci-cloud-controller-manager/releases/download/$(CSI_RELEASE)/oci-csi-node-rbac.yaml
+	curl -sL https://github.com/oracle/oci-cloud-controller-manager/releases/download/$(CSI_RELEASE)/oci-csi-controller-driver.yaml \
+		| kubectl patch --type json -f - --local -o yaml \
+			-p='[{"op": "remove", "path": "/spec/template/spec/nodeSelector"}]' \
+		| kubectl apply -f -
+	kubectl apply -f https://github.com/oracle/oci-cloud-controller-manager/releases/download/$(CSI_RELEASE)/oci-csi-node-driver.yaml
 	kubectl apply -f https://raw.githubusercontent.com/oracle/oci-cloud-controller-manager/master/manifests/container-storage-interface/storage-class.yaml
 	kubectl get storageclass oci-bv
+	kubectl rollout status deployment/csi-oci-controller -n kube-system --timeout=120s
+	kubectl rollout status daemonset/csi-oci-node -n kube-system --timeout=120s
 	./scripts/setup-backup.sh $(NAMESPACE)
 	kubectl apply -f k8s/postgres/cluster.yaml -n $(NAMESPACE)
 	kubectl wait --for=condition=Ready pod -l postgresql=postgres-cluster \
