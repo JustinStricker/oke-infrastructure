@@ -12,15 +12,24 @@
 
 Infra lives in `infrastructure/`. All CI/CD workflows for infra are in `.github/workflows/`.
 
-## What's Needed (App-Side — Not Yet Created)
+## Files Created (App-Side)
 
-### 1. Dockerfile — `server/Dockerfile`
+| File | Purpose |
+|------|---------|
+| `app/server/Dockerfile` | Multi-stage ARM64 Docker build |
+| `.dockerignore` | Exclude unnecessary files from build context |
+| `infrastructure/k8s/app/deployment.yaml` | Deployment (1 replica, 8080, probes) + PVC (1Gi, `oci-bv`) |
+| `infrastructure/k8s/app/service.yaml` | LoadBalancer, port 80 → 8080 |
+| `.github/workflows/ci.yml` | Build + test on push/PR to main |
+| `.github/workflows/deploy-server.yml` | Build image → push OCIR → deploy to OKE |
+
+### 1. `app/server/Dockerfile`
 Multi-stage build for ARM64 (Ampere nodes):
-- Stage 1: Build with `gradle:8.9.0-jdk21`, run `:server:installDist`
-- Stage 2: Runtime with `eclipse-temurin:21-jre`, expose 8080, `ENTRYPOINT ["/app/server/bin/server"]`
+- Stage 1: Build with `gradle:8.9.0-jdk21`, run `:app:server:installDist`
+- Stage 2: Runtime with `eclipse-temurin:21-jre`, `WORKDIR /app/server`, expose 8080, `ENTRYPOINT ["/app/server/bin/server"]`
 
-### 2. Docker build context — `.dockerignore`
-Exclude `.git/`, `build/`, `.gradle/`, `*.md`, etc.
+### 2. `.dockerignore`
+Exclude `.git/`, `build/`, `.gradle/`, `*.md`, `.idea/`, `local.properties`, `.terraform/`, `data/`.
 
 ### 3. Kubernetes manifests — `infrastructure/k8s/app/`
 - **`deployment.yaml`** — Deployment (1 replica, port 8080, liveness/readiness probes) + PVC (1Gi, `oci-bv` storage class) for SQLite at `/app/server/data`
@@ -29,18 +38,20 @@ Exclude `.git/`, `build/`, `.gradle/`, `*.md`, etc.
 ### 4. GitHub Actions workflows — `.github/workflows/`
 
 #### `ci.yml`
-Trigger: push/PR to main. Runs `./gradlew :server:build :server:test` (and shared/composeApp compile-checks).
+Trigger: push/PR to main. Runs `./gradlew :app:server:build :app:server:test`.
 
 #### `deploy-server.yml`
 Trigger: push to main. Full pipeline:
 
-1. `./gradlew :server:installDist`
-2. `docker buildx build --push` → OCIR (tagged with `${{ github.sha }}` + `latest`)
-3. Generate kubeconfig via OCI CLI
-4. `kubectl apply -f infrastructure/k8s/app/`
+1. `./gradlew :app:server:installDist`
+2. `oci artifacts container repository create` (self-healing — creates if missing)
+3. Derive OCIR registry + namespace at runtime → `docker login`
+4. `docker/build-push-action` with `linux/arm64` → OCIR (tagged with `${{ github.sha }}` + `latest`)
+5. Generate kubeconfig via `oci ce cluster create-kubeconfig` (same pattern as `deploy-postgresql.yml`)
+6. `kubectl apply -f infrastructure/k8s/app/`
+7. Wait for rollout + show LoadBalancer IP
 
-The kubeconfig is generated dynamically — **no static `KUBECONFIG_RAW` secret needed** (same pattern as `deploy-postgresql.yml`):
-
+The kubeconfig is generated dynamically — **no static `KUBECONFIG_RAW` secret needed**:
 ```yaml
 - name: Get Cluster OCID
   run: echo "cluster_id=$(tofu output -raw cluster_id)" >> $GITHUB_OUTPUT
@@ -53,16 +64,9 @@ The kubeconfig is generated dynamically — **no static `KUBECONFIG_RAW` secret 
       --region ${{ secrets.OCI_REGION }}
 ```
 
-OCIR login derives `region_key` and `tenancy_namespace` at runtime from existing API key secrets, needing only the two new secrets for the docker password:
-
+OCIR login derives `region_key` and `tenancy_namespace` at runtime, needing only two GitHub secrets:
 ```yaml
 - name: Derive OCIR config and log in
-  env:
-    OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
-    OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
-    OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-    OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_PRIVATE_KEY }}
-    OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
   run: |
     NAMESPACE=$(oci os ns get | jq -r '.data')
     REGION_KEY=$(oci iam region list | jq -r '.data[] | select(.name=="'"$OCI_CLI_REGION"'") | .key' | tr '[:upper:]' '[:lower:]')
@@ -73,10 +77,7 @@ OCIR login derives `region_key` and `tenancy_namespace` at runtime from existing
     echo "REPO=${NAMESPACE}/demo-server" >> $GITHUB_ENV
 ```
 
-### 5. OCIR repository
-Create once in OCI Console → Developer Services → Container Registry → `demo-server` (private).
-
-### 6. GitHub secrets
+## GitHub Secrets Status
 
 | Secret | Status | Source |
 |--------|--------|--------|
@@ -88,19 +89,6 @@ Create once in OCI Console → Developer Services → Container Registry → `de
 | `OCI_COMPARTMENT_OCID` | ✅ Already set | — |
 | `OCI_AUTH_TOKEN` | ❌ **Need to add** | OCI Console → User Settings → Auth Tokens → Generate Token |
 | `OCIR_USER_NAME` | ❌ **Need to add** | Your OCI username (typically your email, e.g. `justin@example.com`) |
-
-`OCIR_REGION_KEY` and `OCIR_TENANCY_NAMESPACE` are **derived at runtime** — no secrets needed for those.
-
-## Files to Create
-
-| File | Purpose |
-|------|---------|
-| `server/Dockerfile` | Multi-stage ARM64 Docker build |
-| `.dockerignore` | Exclude unnecessary files from build context |
-| `infrastructure/k8s/app/deployment.yaml` | Deployment + PVC |
-| `infrastructure/k8s/app/service.yaml` | LoadBalancer service |
-| `.github/workflows/ci.yml` | Build + test on push/PR |
-| `.github/workflows/deploy-server.yml` | Build image → push to OCIR → deploy to OKE |
 
 ## Cluster Info
 
