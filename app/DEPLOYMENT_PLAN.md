@@ -20,8 +20,7 @@ Infra lives in `infrastructure/`. All CI/CD workflows for infra are in `.github/
 | `.dockerignore` | Exclude unnecessary files from build context |
 | `infrastructure/k8s/app/deployment.yaml` | Deployment (1 replica, 8080, probes) + PVC (1Gi, `oci-bv`) |
 | `infrastructure/k8s/app/service.yaml` | LoadBalancer, port 80 → 8080 |
-| `.github/workflows/ci.yml` | Build + test on push/PR to main |
-| `.github/workflows/deploy-server.yml` | Build image → push OCIR → deploy to OKE |
+| `.github/workflows/ci.yml` | Build + test → deploy to OKE on push to main |
 
 ### 1. `app/server/Dockerfile`
 Multi-stage build for ARM64 (Ampere nodes):
@@ -38,16 +37,16 @@ Exclude `.git/`, `build/`, `.gradle/`, `*.md`, `.idea/`, `local.properties`, `.t
 ### 4. GitHub Actions workflows — `.github/workflows/`
 
 #### `ci.yml`
-Trigger: push/PR to main. Runs `./gradlew :app:server:build :app:server:test`.
+Trigger: push to `main`. Two jobs in one file:
 
-#### `deploy-server.yml`
-Trigger: push to main. Full pipeline:
+**`test`** — Build + test (`./gradlew :app:server:build :app:server:test`).
 
+**`deploy`** (needs: test) — Full deploy pipeline:
 1. `./gradlew :app:server:installDist`
 2. `oci artifacts container repository create` (self-healing — creates if missing)
 3. Derive OCIR registry + namespace at runtime → `docker login`
 4. `docker/build-push-action` with `linux/arm64` → OCIR (tagged with `${{ github.sha }}` + `latest`)
-5. Generate kubeconfig via `oci ce cluster create-kubeconfig` (same pattern as `deploy-postgresql.yml`)
+5. Generate kubeconfig via `oci ce cluster create-kubeconfig`
 6. `kubectl apply -f infrastructure/k8s/app/`
 7. Wait for rollout + show LoadBalancer IP
 
