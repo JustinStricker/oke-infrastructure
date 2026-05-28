@@ -97,6 +97,10 @@ jobs:
           rm -f /tmp/oci-config.yaml
           kubectl apply -f https://github.com/oracle/oci-cloud-controller-manager/releases/download/${CSI_RELEASE}/oci-csi-node-rbac.yaml
           kubectl apply -f https://github.com/oracle/oci-cloud-controller-manager/releases/download/${CSI_RELEASE}/oci-csi-controller-driver.yaml
+          # OKE has no control-plane nodes; remove the nodeSelector so the
+          # controller schedules on worker nodes.
+          kubectl patch deployment csi-oci-controller -n kube-system --type json \
+            -p='[{"op": "remove", "path": "/spec/template/spec/nodeSelector"}]'
           kubectl apply -f https://github.com/oracle/oci-cloud-controller-manager/releases/download/${CSI_RELEASE}/oci-csi-node-driver.yaml
           kubectl apply -f https://raw.githubusercontent.com/oracle/oci-cloud-controller-manager/master/manifests/container-storage-interface/storage-class.yaml
 
